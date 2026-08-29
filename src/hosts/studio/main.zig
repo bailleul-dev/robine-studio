@@ -7,7 +7,8 @@ const Studio = struct {
     scene: robine.ui.wireframe.Scene = .{},
     pedalboard_mesh: robine.ui.pedalboard_3d.Mesh = .{},
     view: robine.ui.wireframe.ViewState = .rig,
-    amplifier_focused: bool = false,
+    focused_amplifier: ?robine.core.equipment_state.AmplifierId = null,
+    active_amplifier: robine.core.equipment_state.AmplifierSelector = .init(.dumble),
     first_pedal_enabled: robine.core.equipment_state.EquipmentSwitch = .init(true),
     first_pedal_mode: robine.core.equipment_state.EquipmentModeSwitch = .init(.middle),
     tumnus_enabled: robine.core.equipment_state.EquipmentSwitch = .init(true),
@@ -18,7 +19,7 @@ const Studio = struct {
     equipment_revision: u64 = 0,
 
     fn project(self: *Studio) !void {
-        try robine.ui.wireframe.projectStudioView(&self.scene, &robine.model.demo.rig, self.view, self.amplifier_focused);
+        try robine.ui.wireframe.projectStudioView(&self.scene, &robine.model.demo.rig, self.view, self.focused_amplifier != null);
     }
 
     fn rebuildPedalboard(self: *Studio) !void {
@@ -45,6 +46,7 @@ const Studio = struct {
                 .pedal_enabled = &enabled,
                 .pedal_modes = &modes,
                 .pedal_footswitch_masks = &footswitch_masks,
+                .active_amplifier = self.active_amplifier.selected(),
             },
         );
         self.equipment_revision +%= 1;
@@ -54,42 +56,54 @@ const Studio = struct {
         const self: *Studio = @ptrCast(@alignCast(context));
         if (self.scene.actionAt(point)) |action| {
             const previous_view = self.view;
-            const previous_focus = self.amplifier_focused;
+            const previous_focus = self.focused_amplifier;
             switch (action) {
                 .show_rig => {
                     self.view = .rig;
-                    self.amplifier_focused = false;
+                    self.focused_amplifier = null;
                 },
                 .show_amplifier => {
                     self.view = .rig;
-                    self.amplifier_focused = true;
+                    self.focused_amplifier = .dumble;
                 },
                 .show_lighting_lab => {
                     self.view = .lighting_lab;
-                    self.amplifier_focused = false;
+                    self.focused_amplifier = null;
                 },
             }
-            if (self.view == previous_view and self.amplifier_focused == previous_focus) return false;
+            if (self.view == previous_view and self.focused_amplifier == previous_focus) return false;
             self.project() catch |err| {
                 self.view = previous_view;
-                self.amplifier_focused = previous_focus;
+                self.focused_amplifier = previous_focus;
                 std.log.err("Scene projection failed after view change: {s}", .{@errorName(err)});
                 return false;
             };
             return true;
         }
-        if (self.view == .rig and self.amplifier_focused and
-            robine.ui.pedalboard_3d.hitTestFocusedAmplifier(point, window_aspect))
-        {
-            self.amplifier_focused = false;
-            self.project() catch |err| {
-                self.amplifier_focused = true;
-                std.log.err("Scene projection failed after amplifier return: {s}", .{@errorName(err)});
-                return false;
-            };
-            return true;
+        if (self.view == .rig) {
+            if (self.focused_amplifier) |focused| {
+                if (robine.ui.pedalboard_3d.hitTestAmplifierPower(point, window_aspect, focused)) {
+                    const previous = self.active_amplifier.selected();
+                    self.active_amplifier.select(focused);
+                    self.rebuildPedalboard() catch |err| {
+                        self.active_amplifier.select(previous);
+                        std.log.err("Amplifier power projection failed: {s}", .{@errorName(err)});
+                        return false;
+                    };
+                    return true;
+                }
+                if (robine.ui.pedalboard_3d.hitTestFocusedAmplifier(point, window_aspect, focused)) {
+                    self.focused_amplifier = null;
+                    self.project() catch |err| {
+                        self.focused_amplifier = focused;
+                        std.log.err("Scene projection failed after amplifier return: {s}", .{@errorName(err)});
+                        return false;
+                    };
+                    return true;
+                }
+            }
         }
-        if (self.view == .rig and !self.amplifier_focused and
+        if (self.view == .rig and self.focused_amplifier == null and
             robine.ui.pedalboard_3d.hitTestPedalModeSwitch(
                 point,
                 window_aspect,
@@ -106,7 +120,7 @@ const Studio = struct {
             };
             return true;
         }
-        if (self.view == .rig and !self.amplifier_focused and
+        if (self.view == .rig and self.focused_amplifier == null and
             robine.ui.pedalboard_3d.hitTestPedalFootswitch(
                 point,
                 window_aspect,
@@ -124,7 +138,7 @@ const Studio = struct {
             };
             return true;
         }
-        if (self.view == .rig and !self.amplifier_focused) {
+        if (self.view == .rig and self.focused_amplifier == null) {
             const pedal_indices = [_]usize{ 1, 2, 4 };
             const states = [_]*robine.core.equipment_state.EquipmentSwitch{
                 &self.tumnus_enabled,
@@ -172,12 +186,11 @@ const Studio = struct {
                 }
             }
         }
-        if (self.view == .rig and !self.amplifier_focused and
-            robine.ui.pedalboard_3d.hitTestAmplifier(point, window_aspect))
-        {
-            self.amplifier_focused = true;
+        if (self.view == .rig and self.focused_amplifier == null) {
+            const focused = robine.ui.pedalboard_3d.amplifierAt(point, window_aspect) orelse return false;
+            self.focused_amplifier = focused;
             self.project() catch |err| {
-                self.amplifier_focused = false;
+                self.focused_amplifier = null;
                 std.log.err("Scene projection failed after amplifier focus: {s}", .{@errorName(err)});
                 return false;
             };
@@ -194,8 +207,8 @@ const Studio = struct {
             .equipment_vertices = self.pedalboard_mesh.items(),
             .equipment_lights = self.pedalboard_mesh.emissiveLights(),
             .equipment_revision = self.equipment_revision,
-            .equipment_camera = if (self.amplifier_focused)
-                robine.ui.pedalboard_3d.amplifier_camera
+            .equipment_camera = if (self.focused_amplifier) |focused|
+                robine.ui.pedalboard_3d.amplifierCamera(focused)
             else
                 robine.ui.pedalboard_3d.rig_camera,
             .mode = switch (self.view) {
@@ -222,6 +235,7 @@ pub fn main() !void {
         &studio.king_orange_enabled,
         &studio.king_red_enabled,
         &studio.reverb_enabled,
+        &studio.active_amplifier,
     );
     defer startup_player.deinit();
 

@@ -1,7 +1,10 @@
 const std = @import("std");
 const demo = @import("../model/demo.zig");
-const ThreePosition = @import("../core/equipment_state.zig").ThreePosition;
+const equipment_state = @import("../core/equipment_state.zig");
+const ThreePosition = equipment_state.ThreePosition;
 const lighting = @import("lighting_lab.zig");
+
+pub const AmplifierId = equipment_state.AmplifierId;
 
 pub const Vertex = lighting.Vertex;
 pub const Material = lighting.Material;
@@ -51,12 +54,6 @@ pub const rig_camera = CameraPose{
     .field_of_view_degrees = studio_profile.field_of_view_degrees,
 };
 
-pub const amplifier_camera = CameraPose{
-    .camera = .{ -11.80, 3.40, 0 },
-    .target = .{ -18.40, 1.20, 0 },
-    .field_of_view_degrees = 50.0,
-};
-
 pub const studio_viewport = struct {
     pub const left: f32 = 0.0;
     pub const top: f32 = 0.0;
@@ -72,6 +69,8 @@ pub const BuildState = struct {
     /// Optional per-pedal footswitch bit masks. Bit zero is the leftmost
     /// footswitch. Missing entries inherit the pedal-wide enabled state.
     pedal_footswitch_masks: []const u8 = &.{},
+    /// Exactly one amplifier is powered at a time.
+    active_amplifier: AmplifierId = .dumble,
 };
 
 // One world unit is 200 mm. Scene architecture, equipment bodies, and their
@@ -83,18 +82,17 @@ const pedal_detail_scale: f32 = millimetres_to_world / legacy_pedal_scale;
 // Reference combo: 620 x 500 x 260 mm, resting on the 56 mm-high floor.
 const combo_center = [3]f32{ 0, 1.53, -4.28 };
 const combo_size = [3]f32{ 3.10, 2.50, 1.30 };
-const AmplifierStyle = enum { dumble, bogner, mesa };
 const ComboPlacement = struct {
     center: [3]f32,
     yaw_degrees: f32,
-    style: AmplifierStyle,
+    id: AmplifierId,
 };
 const combo_placements = [_]ComboPlacement{
-    .{ .center = combo_center, .yaw_degrees = 0, .style = .dumble },
     // The side combos move 110 mm toward the listener and toe inward to form
     // a shallow listening arc around the original amplifier.
-    .{ .center = .{ 3.25, 1.53, -3.73 }, .yaw_degrees = -12.0, .style = .bogner },
-    .{ .center = .{ -3.25, 1.53, -3.73 }, .yaw_degrees = 12.0, .style = .mesa },
+    .{ .center = .{ 3.25, 1.53, -3.73 }, .yaw_degrees = -12.0, .id = .bogner },
+    .{ .center = combo_center, .yaw_degrees = 0, .id = .dumble },
+    .{ .center = .{ -3.25, 1.53, -3.73 }, .yaw_degrees = 12.0, .id = .mesa },
 };
 const equipment_offset_x: f32 = -14.52;
 // 65 mm clear space leaves opposing side jacks readable without scattering the
@@ -207,7 +205,9 @@ pub fn build(mesh: *Mesh, rig: *const demo.Rig, state: BuildState) !void {
     try addStudioRoom(mesh);
     const equipment_vertex_start = mesh.len;
     const equipment_light_start = mesh.emissive_light_len;
-    for (combo_placements) |placement| try addComboAmplifier(mesh, placement);
+    for (combo_placements) |placement| {
+        try addComboAmplifier(mesh, placement, placement.id == state.active_amplifier);
+    }
 
     for (rig.pedals, 0..) |pedal, index| {
         const placement = pedalPlacement(rig, index) orelse unreachable;
@@ -236,6 +236,23 @@ fn equipmentPoint(point: [3]f32) [3]f32 {
 fn equipmentDirection(direction: [3]f32) [3]f32 {
     return .{ direction[2], direction[1], -direction[0] };
 }
+
+fn comboPlacement(id: AmplifierId) ComboPlacement {
+    return combo_placements[@intFromEnum(id)];
+}
+
+pub fn amplifierCamera(id: AmplifierId) CameraPose {
+    const placement = comboPlacement(id);
+    const center = equipmentPoint(placement.center);
+    const front = equipmentDirection(rotateDirectionY(.{ 0, 0, 1 }, placement.yaw_degrees));
+    return .{
+        .camera = .{ center[0] + front[0] * 4.35, 2.70, center[2] + front[2] * 4.35 },
+        .target = .{ center[0], 1.35, center[2] },
+        .field_of_view_degrees = 50.0,
+    };
+}
+
+pub const amplifier_camera = amplifierCamera(.dumble);
 
 fn transformEquipment(mesh: *Mesh, vertex_start: usize, light_start: usize) void {
     for (mesh.vertices[vertex_start..mesh.len]) |*item| {
@@ -342,25 +359,78 @@ fn pedalPlacement(rig: *const demo.Rig, pedal_index: usize) ?PedalPlacement {
     return null;
 }
 
-pub fn hitTestAmplifier(point: [2]f32, window_aspect: f32) bool {
-    return hitTestAmplifierFromCamera(point, window_aspect, rig_camera);
-}
-
-pub fn hitTestFocusedAmplifier(point: [2]f32, window_aspect: f32) bool {
-    return hitTestAmplifierFromCamera(point, window_aspect, amplifier_camera);
-}
-
-fn hitTestAmplifierFromCamera(point: [2]f32, window_aspect: f32, camera: CameraPose) bool {
+pub fn amplifierAt(point: [2]f32, window_aspect: f32) ?AmplifierId {
     const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
+    var result: ?AmplifierId = null;
+    var nearest_distance_squared = std.math.inf(f32);
+    for (combo_placements) |placement| {
+        if (!hitTestAmplifierPlacement(point, viewport_aspect, rig_camera, placement)) continue;
+        const projected = projectToWindow(equipmentPoint(placement.center), rig_camera, viewport_aspect) orelse continue;
+        const dx = point[0] - projected[0];
+        const dy = point[1] - projected[1];
+        const distance_squared = dx * dx + dy * dy;
+        if (distance_squared < nearest_distance_squared) {
+            nearest_distance_squared = distance_squared;
+            result = placement.id;
+        }
+    }
+    return result;
+}
+
+pub fn hitTestAmplifier(point: [2]f32, window_aspect: f32) bool {
+    return amplifierAt(point, window_aspect) != null;
+}
+
+pub fn hitTestFocusedAmplifier(point: [2]f32, window_aspect: f32, id: AmplifierId) bool {
+    const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
+    return hitTestAmplifierPlacement(point, viewport_aspect, amplifierCamera(id), comboPlacement(id));
+}
+
+pub fn hitTestAmplifierPower(point: [2]f32, window_aspect: f32, id: AmplifierId) bool {
+    const placement = comboPlacement(id);
+    const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
+    const camera = amplifierCamera(id);
+    const scale_x = combo_size[0] / 5.15;
+    const scale_y = combo_size[1] / 3.0;
+    const scale_z = combo_size[2] / 1.34;
+    const floor_top: f32 = 0.28;
+    const front_z = placement.center[2] + combo_size[2] * 0.5;
+    const panel_y = floor_top + combo_size[1] - 0.34 * scale_y;
+    const canonical_center = rotatePointY(
+        .{ placement.center[0] - 1.82 * scale_x, panel_y, front_z + 0.150 * scale_z },
+        placement.center,
+        placement.yaw_degrees,
+    );
+    const canonical_x_edge = rotatePointY(
+        .{ placement.center[0] - 1.82 * scale_x + 0.16, panel_y, front_z + 0.150 * scale_z },
+        placement.center,
+        placement.yaw_degrees,
+    );
+    const center = projectToWindow(equipmentPoint(canonical_center), camera, viewport_aspect) orelse return false;
+    const x_edge = projectToWindow(equipmentPoint(canonical_x_edge), camera, viewport_aspect) orelse return false;
+    const y_edge = projectToWindow(equipmentPoint(.{ canonical_center[0], canonical_center[1] + 0.18 * scale_y, canonical_center[2] }), camera, viewport_aspect) orelse return false;
+    const half_width = @max(@abs(x_edge[0] - center[0]), 0.018);
+    const half_height = @max(@abs(y_edge[1] - center[1]), 0.018);
+    const padding: f32 = 0.014;
+    return @abs(point[0] - center[0]) <= half_width + padding and
+        @abs(point[1] - center[1]) <= half_height + padding;
+}
+
+fn hitTestAmplifierPlacement(
+    point: [2]f32,
+    viewport_aspect: f32,
+    camera: CameraPose,
+    placement: ComboPlacement,
+) bool {
     const half = [3]f32{ combo_size[0] * 0.5, combo_size[1] * 0.5, combo_size[2] * 0.5 };
     var minimum = [2]f32{ std.math.inf(f32), std.math.inf(f32) };
     var maximum = [2]f32{ -std.math.inf(f32), -std.math.inf(f32) };
     for (0..8) |index| {
-        const corner = [3]f32{
-            combo_center[0] + (if (index & 1 == 0) -half[0] else half[0]),
-            combo_center[1] + (if (index & 2 == 0) -half[1] else half[1]),
-            combo_center[2] + (if (index & 4 == 0) -half[2] else half[2]),
-        };
+        const corner = rotatePointY(.{
+            placement.center[0] + (if (index & 1 == 0) -half[0] else half[0]),
+            placement.center[1] + (if (index & 2 == 0) -half[1] else half[1]),
+            placement.center[2] + (if (index & 4 == 0) -half[2] else half[2]),
+        }, placement.center, placement.yaw_degrees);
         const projected = projectToWindow(equipmentPoint(corner), camera, viewport_aspect) orelse continue;
         minimum[0] = @min(minimum[0], projected[0]);
         minimum[1] = @min(minimum[1], projected[1]);
@@ -767,7 +837,7 @@ const AmplifierPalette = struct {
     badge: Material,
 };
 
-fn amplifierPalette(style: AmplifierStyle) AmplifierPalette {
+fn amplifierPalette(style: AmplifierId) AmplifierPalette {
     return switch (style) {
         .dumble => .{
             .vinyl = materials.amplifier_vinyl,
@@ -796,11 +866,11 @@ fn amplifierPalette(style: AmplifierStyle) AmplifierPalette {
     };
 }
 
-fn addComboAmplifier(mesh: *Mesh, placement: ComboPlacement) !void {
+fn addComboAmplifier(mesh: *Mesh, placement: ComboPlacement, powered: bool) !void {
     const floor_top: f32 = 0.28;
     const center = placement.center;
     const size = combo_size;
-    const palette = amplifierPalette(placement.style);
+    const palette = amplifierPalette(placement.id);
     const vertex_start = mesh.len;
     const front_z = center[2] + size[2] * 0.5;
     const scale_x = size[0] / 5.15;
@@ -838,7 +908,11 @@ fn addComboAmplifier(mesh: *Mesh, placement: ComboPlacement) !void {
 
     const panel_y = floor_top + size[1] - 0.34 * scale_y;
     try addBox(mesh, .{ center[0], panel_y, front_z + 0.080 * scale_z }, .{ size[0] - 0.48 * scale_x, 0.43 * scale_y, 0.11 * scale_z }, palette.panel);
-    try addBox(mesh, .{ center[0] - 1.82 * scale_x, panel_y, front_z + 0.150 * scale_z }, .{ 0.18 * scale_x, 0.24 * scale_y, 0.05 * scale_z }, materials.black_metal);
+    const power_material = if (powered)
+        Material{ .base_color = .{ 0.95, 0.26, 0.035 }, .roughness = 0.18, .metallic = 0.18, .emissive = 2.8 }
+    else
+        materials.black_metal;
+    try addBox(mesh, .{ center[0] - 1.82 * scale_x, panel_y, front_z + 0.150 * scale_z }, .{ 0.18 * scale_x, 0.24 * scale_y, 0.05 * scale_z }, power_material);
     for (0..6) |index| {
         const x = center[0] - 1.20 * scale_x + @as(f32, @floatFromInt(index)) * 0.47 * scale_x;
         try addCylinder(mesh, .{ x, panel_y, front_z + 0.175 * scale_z }, 0.105 * control_scale, 0.105 * scale_z, materials.knob_plastic, .z);
@@ -860,21 +934,34 @@ fn addComboAmplifier(mesh: *Mesh, placement: ComboPlacement) !void {
     rotateMeshRangeY(mesh, vertex_start, center, placement.yaw_degrees);
 }
 
-fn rotateMeshRangeY(mesh: *Mesh, vertex_start: usize, center: [3]f32, degrees: f32) void {
-    if (degrees == 0) return;
+fn rotatePointY(point: [3]f32, center: [3]f32, degrees: f32) [3]f32 {
+    const direction = rotateDirectionY(.{ point[0] - center[0], point[1] - center[1], point[2] - center[2] }, degrees);
+    return .{ center[0] + direction[0], center[1] + direction[1], center[2] + direction[2] };
+}
+
+fn rotateDirectionY(direction: [3]f32, degrees: f32) [3]f32 {
+    if (degrees == 0) return direction;
     const radians = degrees * std.math.pi / 180.0;
     const cosine = @cos(radians);
     const sine = @sin(radians);
-    for (mesh.vertices[vertex_start..mesh.len]) |*item| {
-        const x = item.position[0] - center[0];
-        const z = item.position[2] - center[2];
-        item.position[0] = center[0] + x * cosine + z * sine;
-        item.position[2] = center[2] - x * sine + z * cosine;
+    return .{
+        direction[0] * cosine + direction[2] * sine,
+        direction[1],
+        -direction[0] * sine + direction[2] * cosine,
+    };
+}
 
-        const normal_x = item.normal[0];
-        const normal_z = item.normal[2];
-        item.normal[0] = normal_x * cosine + normal_z * sine;
-        item.normal[2] = -normal_x * sine + normal_z * cosine;
+fn rotateMeshRangeY(mesh: *Mesh, vertex_start: usize, center: [3]f32, degrees: f32) void {
+    if (degrees == 0) return;
+    for (mesh.vertices[vertex_start..mesh.len]) |*item| {
+        const position = rotatePointY(.{ item.position[0], item.position[1], item.position[2] }, center, degrees);
+        const normal = rotateDirectionY(.{ item.normal[0], item.normal[1], item.normal[2] }, degrees);
+        item.position[0] = position[0];
+        item.position[1] = position[1];
+        item.position[2] = position[2];
+        item.normal[0] = normal[0];
+        item.normal[1] = normal[1];
+        item.normal[2] = normal[2];
     }
 }
 
@@ -1720,8 +1807,12 @@ test "open presentation remains available outside the default rig" {
 }
 
 test "combo amplifier projects to a clickable rig-view region" {
-    const projected_center = projectToWindow(equipmentPoint(combo_center), rig_camera, (1200.0 / 760.0) * studio_viewport.width / studio_viewport.height) orelse return error.ComboBehindCamera;
-    try std.testing.expect(hitTestAmplifier(projected_center, 1200.0 / 760.0));
+    const window_aspect = 1200.0 / 760.0;
+    const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
+    for (combo_placements) |placement| {
+        const projected_center = projectToWindow(equipmentPoint(placement.center), rig_camera, viewport_aspect) orelse return error.ComboBehindCamera;
+        try std.testing.expectEqual(placement.id, amplifierAt(projected_center, window_aspect).?);
+    }
     try std.testing.expect(!hitTestAmplifier(.{ 0.90, -0.80 }, 1200.0 / 760.0));
 }
 
@@ -1746,7 +1837,7 @@ test "studio rug selects the generated base-color texture slot" {
 
 test "focused combo remains clickable for direct return navigation" {
     const projected_center = projectToWindow(equipmentPoint(combo_center), amplifier_camera, (1200.0 / 760.0) * studio_viewport.width / studio_viewport.height) orelse return error.ComboBehindCamera;
-    try std.testing.expect(hitTestFocusedAmplifier(projected_center, 1200.0 / 760.0));
+    try std.testing.expect(hitTestFocusedAmplifier(projected_center, 1200.0 / 760.0, .dumble));
 }
 
 test "first semantic footswitch is picked at its projected position" {

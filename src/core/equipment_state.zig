@@ -62,6 +62,30 @@ pub const EquipmentModeSwitch = struct {
     }
 };
 
+pub const AmplifierId = enum(u8) {
+    bogner,
+    dumble,
+    mesa,
+};
+
+/// UI-owned exclusive amplifier selection observed by the audio callback.
+/// Selecting one identifier implicitly powers down the other amplifiers.
+pub const AmplifierSelector = struct {
+    value: std.atomic.Value(u8),
+
+    pub fn init(initial: AmplifierId) AmplifierSelector {
+        return .{ .value = .init(@intFromEnum(initial)) };
+    }
+
+    pub fn selected(self: *const AmplifierSelector) AmplifierId {
+        return @enumFromInt(self.value.load(.acquire));
+    }
+
+    pub fn select(self: *AmplifierSelector, amplifier: AmplifierId) void {
+        self.value.store(@intFromEnum(amplifier), .release);
+    }
+};
+
 test "equipment switch exposes one canonical state across consumers" {
     var state = EquipmentSwitch.init(true);
     try std.testing.expect(state.isEnabled());
@@ -77,4 +101,13 @@ test "three-position equipment selector cycles deterministically" {
     try std.testing.expectEqual(ThreePosition.high, state.cycle());
     try std.testing.expectEqual(ThreePosition.low, state.cycle());
     try std.testing.expectEqual(ThreePosition.middle, state.cycle());
+}
+
+test "amplifier selection is exclusive and atomically observable" {
+    var selector = AmplifierSelector.init(.dumble);
+    try std.testing.expectEqual(AmplifierId.dumble, selector.selected());
+    selector.select(.bogner);
+    try std.testing.expectEqual(AmplifierId.bogner, selector.selected());
+    selector.select(.mesa);
+    try std.testing.expectEqual(AmplifierId.mesa, selector.selected());
 }

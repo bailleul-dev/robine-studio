@@ -28,6 +28,8 @@ const KingOfToneMode = enum {
 };
 
 const KingOfToneTransition = robine.audio.mode_switch.DiscreteTransition(KingOfToneMode);
+const AmplifierId = robine.core.equipment_state.AmplifierId;
+const AmplifierTransition = robine.audio.mode_switch.DiscreteTransition(AmplifierId);
 
 pub const StartupPlayer = struct {
     allocator: std.mem.Allocator,
@@ -37,10 +39,9 @@ pub const StartupPlayer = struct {
     tumnus: robine.audio.nam.Model,
     big_muff: robine.audio.nam.Model,
     king_of_tone_models: [3]robine.audio.nam.Model,
-    amplifier: robine.audio.nam.Model,
+    amplifiers: [3]robine.audio.nam.Model,
     reverb: robine.audio.reverb.HybridStereoConvolver,
-    reverb_dry_delay: robine.audio.reverb.DelayLine,
-    cabinets: [2]robine.audio.convolver.Convolver,
+    cabinets: [3][2]robine.audio.convolver.Convolver,
     compressor_enabled: *const robine.core.equipment_state.EquipmentSwitch,
     compressor_mode: *const robine.core.equipment_state.EquipmentModeSwitch,
     tumnus_enabled: *const robine.core.equipment_state.EquipmentSwitch,
@@ -48,12 +49,15 @@ pub const StartupPlayer = struct {
     king_orange_enabled: *const robine.core.equipment_state.EquipmentSwitch,
     king_red_enabled: *const robine.core.equipment_state.EquipmentSwitch,
     reverb_enabled: *const robine.core.equipment_state.EquipmentSwitch,
+    amplifier_selector: *const robine.core.equipment_state.AmplifierSelector,
     compressor_bypass: robine.audio.bypass.Smoother,
     tumnus_bypass: robine.audio.bypass.Smoother,
     big_muff_bypass: robine.audio.bypass.Smoother,
     mode_transition: robine.audio.mode_switch.Transition,
     king_of_tone_bypass: robine.audio.bypass.Smoother,
     king_of_tone_transition: KingOfToneTransition,
+    amplifier_power: robine.audio.bypass.Smoother,
+    amplifier_transition: AmplifierTransition,
     reverb_bypass: [2]robine.audio.bypass.Smoother,
     pedal_block: []f32,
     tumnus_block: []f32,
@@ -62,6 +66,7 @@ pub const StartupPlayer = struct {
     amplifier_block: []f32,
     opened: ?contract.OpenedSession = null,
     render_frame: usize = 0,
+    sample_rate: f64,
 
     /// Must be called on the final address of StartupPlayer: CoreAudio retains
     /// `self` as its allocation-free callback context.
@@ -75,6 +80,7 @@ pub const StartupPlayer = struct {
         king_orange_enabled: *const robine.core.equipment_state.EquipmentSwitch,
         king_red_enabled: *const robine.core.equipment_state.EquipmentSwitch,
         reverb_enabled: *const robine.core.equipment_state.EquipmentSwitch,
+        amplifier_selector: *const robine.core.equipment_state.AmplifierSelector,
     ) !void {
         self.* = undefined;
         self.allocator = allocator;
@@ -88,6 +94,7 @@ pub const StartupPlayer = struct {
         self.king_orange_enabled = king_orange_enabled;
         self.king_red_enabled = king_red_enabled;
         self.reverb_enabled = reverb_enabled;
+        self.amplifier_selector = amplifier_selector;
 
         self.source = try robine.audio.wav.decode(allocator, assets.input_wav);
         errdefer self.source.deinit(allocator);
@@ -121,44 +128,56 @@ pub const StartupPlayer = struct {
             model.* = try robine.audio.nam.Model.loadQuality(allocator, model_bytes, .full);
             initialized_king_models += 1;
         }
-        self.amplifier = try robine.audio.nam.Model.loadQuality(allocator, assets.default_nam, .full);
-        errdefer self.amplifier.deinit();
-        if (@abs(self.amplifier.sample_rate - @as(f64, @floatFromInt(self.source.sample_rate))) > 0.5) {
+        var initialized_amplifiers: usize = 0;
+        errdefer for (self.amplifiers[0..initialized_amplifiers]) |*amplifier| amplifier.deinit();
+        for (&self.amplifiers, assets.amplifier_catalog) |*amplifier, asset| {
+            amplifier.* = try robine.audio.nam.Model.loadQuality(allocator, asset.nam, .full);
+            initialized_amplifiers += 1;
+        }
+        self.sample_rate = self.amplifiers[0].sample_rate;
+        if (@abs(self.sample_rate - @as(f64, @floatFromInt(self.source.sample_rate))) > 0.5) {
             return error.SourceAndNamSampleRatesDiffer;
         }
+        for (self.amplifiers) |amplifier| {
+            if (@abs(amplifier.sample_rate - self.sample_rate) > 0.5) {
+                return error.AmplifierSampleRatesDiffer;
+            }
+        }
         for (self.compressors) |compressor| {
-            if (@abs(compressor.sample_rate - self.amplifier.sample_rate) > 0.5) {
+            if (@abs(compressor.sample_rate - self.sample_rate) > 0.5) {
                 return error.SourceAndNamSampleRatesDiffer;
             }
         }
-        if (@abs(self.tumnus.sample_rate - self.amplifier.sample_rate) > 0.5 or
-            @abs(self.big_muff.sample_rate - self.amplifier.sample_rate) > 0.5)
+        if (@abs(self.tumnus.sample_rate - self.sample_rate) > 0.5 or
+            @abs(self.big_muff.sample_rate - self.sample_rate) > 0.5)
         {
             return error.SourceAndNamSampleRatesDiffer;
         }
         for (self.king_of_tone_models) |model| {
-            if (@abs(model.sample_rate - self.amplifier.sample_rate) > 0.5) {
+            if (@abs(model.sample_rate - self.sample_rate) > 0.5) {
                 return error.SourceAndNamSampleRatesDiffer;
             }
         }
         self.compressor_bypass = try .init(
             compressor_enabled.isEnabled(),
-            self.amplifier.sample_rate,
+            self.sample_rate,
             0.005,
         );
         self.mode_transition = .init(compressor_mode.position());
-        self.tumnus_bypass = try .init(tumnus_enabled.isEnabled(), self.amplifier.sample_rate, 0.005);
-        self.big_muff_bypass = try .init(big_muff_enabled.isEnabled(), self.amplifier.sample_rate, 0.005);
+        self.tumnus_bypass = try .init(tumnus_enabled.isEnabled(), self.sample_rate, 0.005);
+        self.big_muff_bypass = try .init(big_muff_enabled.isEnabled(), self.sample_rate, 0.005);
         const initial_king_mode = KingOfToneMode.fromSwitches(
             king_orange_enabled.isEnabled(),
             king_red_enabled.isEnabled(),
         );
         self.king_of_tone_bypass = try .init(
             initial_king_mode != .bypass,
-            self.amplifier.sample_rate,
+            self.sample_rate,
             0.005,
         );
         self.king_of_tone_transition = .init(initial_king_mode);
+        self.amplifier_power = try .init(true, self.sample_rate, 0.010);
+        self.amplifier_transition = .init(amplifier_selector.selected());
 
         var reverb_ir = try robine.audio.wav.decode(allocator, assets.skysurfer_hall_medium_ir);
         defer reverb_ir.deinit(allocator);
@@ -180,30 +199,39 @@ pub const StartupPlayer = struct {
             .{},
         );
         errdefer self.reverb.deinit();
-        self.reverb_dry_delay = try robine.audio.reverb.DelayLine.init(allocator, self.reverb.latencyFrames());
-        errdefer self.reverb_dry_delay.deinit();
         self.reverb_bypass = .{
-            try .init(reverb_enabled.isEnabled(), self.amplifier.sample_rate, 0.005),
-            try .init(reverb_enabled.isEnabled(), self.amplifier.sample_rate, 0.005),
+            try .init(reverb_enabled.isEnabled(), self.sample_rate, 0.005),
+            try .init(reverb_enabled.isEnabled(), self.sample_rate, 0.005),
         };
 
-        var cabinet_ir = try robine.audio.wav.decode(allocator, assets.default_cabinet_ir);
-        defer cabinet_ir.deinit(allocator);
-        if (cabinet_ir.channels != 1) return error.CabinetImpulseMustBeMono;
-        if (cabinet_ir.sample_rate != self.source.sample_rate) {
-            return error.CabinetAndNamSampleRatesDiffer;
-        }
         var initialized_cabinets: usize = 0;
-        errdefer for (self.cabinets[0..initialized_cabinets]) |*cabinet| cabinet.deinit();
-        for (&self.cabinets) |*cabinet| {
-            cabinet.* = try robine.audio.convolver.Convolver.init(allocator, cabinet_ir.samples, 64);
-            initialized_cabinets += 1;
+        errdefer {
+            var remaining = initialized_cabinets;
+            cleanup: for (&self.cabinets) |*stereo_cabinets| {
+                for (stereo_cabinets) |*cabinet| {
+                    if (remaining == 0) break :cleanup;
+                    cabinet.deinit();
+                    remaining -= 1;
+                }
+            }
+        }
+        for (&self.cabinets, assets.amplifier_catalog) |*stereo_cabinets, asset| {
+            var cabinet_ir = try robine.audio.wav.decode(allocator, asset.cabinet_ir);
+            defer cabinet_ir.deinit(allocator);
+            if (cabinet_ir.channels != 1) return error.CabinetImpulseMustBeMono;
+            if (cabinet_ir.sample_rate != self.source.sample_rate) {
+                return error.CabinetAndNamSampleRatesDiffer;
+            }
+            for (stereo_cabinets) |*cabinet| {
+                cabinet.* = try robine.audio.convolver.Convolver.init(allocator, cabinet_ir.samples, 64);
+                initialized_cabinets += 1;
+            }
         }
 
         const opened = try self.driver.driver().open(
             .{
                 .direction = .output,
-                .sample_rate = self.amplifier.sample_rate,
+                .sample_rate = self.sample_rate,
                 .preferred_frames = 512,
                 .input_channels = 0,
                 .output_channels = 2,
@@ -212,10 +240,10 @@ pub const StartupPlayer = struct {
             process,
         );
         errdefer opened.session.close();
-        if (@abs(opened.config.sample_rate - self.amplifier.sample_rate) > 0.5) {
+        if (@abs(opened.config.sample_rate - self.sample_rate) > 0.5) {
             std.log.err(
                 "CoreAudio negotiated {d:.2} Hz but NAM requires {d:.2} Hz",
-                .{ opened.config.sample_rate, self.amplifier.sample_rate },
+                .{ opened.config.sample_rate, self.sample_rate },
             );
             return error.OutputAndNamSampleRatesDiffer;
         }
@@ -236,21 +264,23 @@ pub const StartupPlayer = struct {
         try self.tumnus.prepareBlock(opened.config.maximum_frames);
         try self.big_muff.prepareBlock(opened.config.maximum_frames);
         for (&self.king_of_tone_models) |*model| try model.prepareBlock(opened.config.maximum_frames);
-        try self.amplifier.prepareBlock(opened.config.maximum_frames);
+        for (&self.amplifiers) |*amplifier| try amplifier.prepareBlock(opened.config.maximum_frames);
         for (&self.compressors) |*compressor| compressor.prewarm(opened.config.maximum_frames);
         self.tumnus.prewarm(opened.config.maximum_frames);
         self.big_muff.prewarm(opened.config.maximum_frames);
         for (&self.king_of_tone_models) |*model| model.prewarm(opened.config.maximum_frames);
-        self.amplifier.prewarm(opened.config.maximum_frames);
+        for (&self.amplifiers) |*amplifier| amplifier.prewarm(opened.config.maximum_frames);
         self.reverb.prewarm();
-        for (&self.cabinets) |*cabinet| {
-            for (0..cabinet.partition_size) |_| _ = cabinet.processSample(0.0);
-            cabinet.reset();
+        for (&self.cabinets) |*stereo_cabinets| {
+            for (stereo_cabinets) |*cabinet| {
+                for (0..cabinet.partition_size) |_| _ = cabinet.processSample(0.0);
+                cabinet.reset();
+            }
         }
         self.opened = opened;
         try opened.session.start();
         std.log.info(
-            "Playing full chain: SP Compressor, Tumnus Deluxe, Big Muff, King of Tone, Dumble, Skysurfer Hall, and Orange 2x12 V30: {d:.0} Hz, {d} output channels, {d} frames",
+            "Playing selectable full chain: SP Compressor, Tumnus Deluxe, Big Muff, King of Tone, Bogner/Dumble/Mesa, Skysurfer Hall, and matched cabinets: {d:.0} Hz, {d} output channels, {d} frames",
             .{ opened.config.sample_rate, opened.config.output_channels, opened.config.nominal_frames },
         );
     }
@@ -265,10 +295,11 @@ pub const StartupPlayer = struct {
         self.allocator.free(self.big_muff_block);
         self.allocator.free(self.tumnus_block);
         self.allocator.free(self.pedal_block);
-        for (&self.cabinets) |*cabinet| cabinet.deinit();
-        self.reverb_dry_delay.deinit();
+        for (&self.cabinets) |*stereo_cabinets| {
+            for (stereo_cabinets) |*cabinet| cabinet.deinit();
+        }
         self.reverb.deinit();
-        self.amplifier.deinit();
+        for (&self.amplifiers) |*amplifier| amplifier.deinit();
         for (&self.king_of_tone_models) |*model| model.deinit();
         self.big_muff.deinit();
         self.tumnus.deinit();
@@ -281,8 +312,12 @@ pub const StartupPlayer = struct {
         const self: *StartupPlayer = @ptrCast(@alignCast(context));
         const output = cycle.output orelse return;
         const source_frames = self.source.frames();
+        const requested_amplifier = self.amplifier_selector.selected();
+        const active_amplifier = self.amplifier_transition.activeState();
+        const active_amplifier_index: usize = @intFromEnum(active_amplifier);
+        const active_cabinets = &self.cabinets[active_amplifier_index];
         const rendered_frames = source_frames + self.reverb.tailFrames() + self.reverb.latencyFrames() +
-            self.cabinets[0].tailFrames() + self.cabinets[0].latencyFrames();
+            active_cabinets[0].tailFrames() + active_cabinets[0].latencyFrames();
         const compressor_enabled = self.compressor_enabled.isEnabled();
         const requested_mode = self.compressor_mode.position();
         const render_wet = self.mode_transition.wantsWet(compressor_enabled, requested_mode);
@@ -348,20 +383,26 @@ pub const StartupPlayer = struct {
                     self.king_of_tone_models[model_index].reset();
                 }
             }
-            self.amplifier.processBlock(king_output, self.amplifier_block[0..active_frames]);
+            self.amplifiers[active_amplifier_index].processBlock(king_output, self.amplifier_block[0..active_frames]);
+            for (self.amplifier_block[0..active_frames]) |*sample| {
+                sample.* = self.amplifier_power.process(
+                    0.0,
+                    sample.*,
+                    requested_amplifier == active_amplifier,
+                );
+            }
         }
 
         for (0..cycle.frames) |frame| {
             const amp_output = if (frame < active_frames) self.amplifier_block[frame] else 0.0;
             const absolute_frame = self.render_frame + frame;
-            const delayed_dry = self.reverb_dry_delay.processSample(amp_output);
             const wet = self.reverb.processSample(amp_output);
             const reverb_enabled = self.reverb_enabled.isEnabled();
             var stereo = [2]f32{
-                self.reverb_bypass[0].process(delayed_dry, delayed_dry + (wet[0] - delayed_dry) * 0.5, reverb_enabled),
-                self.reverb_bypass[1].process(delayed_dry, delayed_dry + (wet[1] - delayed_dry) * 0.5, reverb_enabled),
+                mixEffectLoop(&self.reverb_bypass[0], amp_output, wet[0], reverb_enabled),
+                mixEffectLoop(&self.reverb_bypass[1], amp_output, wet[1], reverb_enabled),
             };
-            for (&stereo, &self.cabinets) |*sample, *cabinet| {
+            for (&stereo, active_cabinets) |*sample, *cabinet| {
                 sample.* = if (absolute_frame < rendered_frames)
                     std.math.clamp(cabinet.processSample(sample.*) * assets.monitor_output_gain, -1.0, 1.0)
                 else
@@ -372,9 +413,35 @@ pub const StartupPlayer = struct {
                 writeSample(channel, output.format, frame, stereo[channel_index & 1]);
             }
         }
+        if (self.amplifier_transition.completeWhenDry(
+            requested_amplifier,
+            self.amplifier_power.wetMix(),
+        )) |new_amplifier| {
+            const new_index: usize = @intFromEnum(new_amplifier);
+            self.amplifiers[new_index].reset();
+            for (&self.cabinets[new_index]) |*cabinet| cabinet.reset();
+        }
         self.render_frame += cycle.frames;
     }
 };
+
+fn mixEffectLoop(
+    smoother: *robine.audio.bypass.Smoother,
+    dry: f32,
+    wet_return: f32,
+    enabled: bool,
+) f32 {
+    // The loop is parallel: bypass must always retain the amplifier path.
+    return smoother.process(dry, dry + wet_return * 0.5, enabled);
+}
+
+test "reverb bypass always preserves the dry effects-loop path" {
+    var smoother = try robine.audio.bypass.Smoother.init(true, 1_000.0, 0.004);
+    var sample: f32 = 0;
+    for (0..4) |_| sample = mixEffectLoop(&smoother, 0.25, 0.80, false);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.25), sample, 0.000001);
+    try std.testing.expectEqual(@as(f32, 0.0), smoother.wetMix());
+}
 
 fn ensureWritableFormat(format: contract.SampleFormat) !void {
     switch (format.kind) {

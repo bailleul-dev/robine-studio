@@ -149,8 +149,22 @@ pub fn build(b: *std.Build) void {
     native_audio_tests.root_module.linkFramework("CoreAudio", .{});
     native_audio_tests.root_module.linkFramework("CoreFoundation", .{});
     const run_native_audio_tests = b.addRunArtifact(native_audio_tests);
+    const studio_audio_test_module = b.createModule(.{
+        .root_source_file = b.path("src/hosts/studio/audio.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    studio_audio_test_module.addImport("robine", robine);
+    studio_audio_test_module.addImport("audio_contract", platform_audio);
+    studio_audio_test_module.addImport("native_audio", native_audio);
+    studio_audio_test_module.addImport("audio_assets", audio_assets);
+    const studio_audio_tests = b.addTest(.{ .root_module = studio_audio_test_module });
+    studio_audio_tests.root_module.linkFramework("CoreAudio", .{});
+    studio_audio_tests.root_module.linkFramework("CoreFoundation", .{});
+    const run_studio_audio_tests = b.addRunArtifact(studio_audio_tests);
     const test_step = b.step("test", "Run Robine model, UI, and audio contract tests");
     test_step.dependOn(&run_tests.step);
     test_step.dependOn(&run_platform_audio_tests.step);
     test_step.dependOn(&run_native_audio_tests.step);
+    test_step.dependOn(&run_studio_audio_tests.step);
 }
