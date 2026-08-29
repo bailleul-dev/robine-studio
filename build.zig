@@ -20,6 +20,13 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const native_audio = b.createModule(.{
+        .root_source_file = b.path("src/platform/macos/audio.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    native_audio.addImport("audio_contract", platform_audio);
+
     const platform = b.createModule(.{
         .root_source_file = b.path("src/platform/macos/app.zig"),
         .target = target,
@@ -47,6 +54,25 @@ pub fn build(b: *std.Build) void {
     studio.root_module.linkSystemLibrary("objc", .{});
     b.installArtifact(studio);
 
+    const audio_probe_module = b.createModule(.{
+        .root_source_file = b.path("src/hosts/audio_probe/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    audio_probe_module.addImport("audio_contract", platform_audio);
+    audio_probe_module.addImport("native_audio", native_audio);
+    const audio_probe = b.addExecutable(.{
+        .name = "robine-audio-probe",
+        .root_module = audio_probe_module,
+    });
+    audio_probe.root_module.linkFramework("CoreAudio", .{});
+    audio_probe.root_module.linkFramework("CoreFoundation", .{});
+    b.installArtifact(audio_probe);
+
+    const run_audio_probe = b.addRunArtifact(audio_probe);
+    const audio_probe_step = b.step("audio-probe", "List Core Audio duplex devices");
+    audio_probe_step.dependOn(&run_audio_probe.step);
+
     const install_app_binary = b.addInstallFileWithDir(
         studio.getEmittedBin(),
         .{ .custom = "Robine Studio.app/Contents/MacOS" },
@@ -71,7 +97,12 @@ pub fn build(b: *std.Build) void {
     const run_tests = b.addRunArtifact(tests);
     const platform_audio_tests = b.addTest(.{ .root_module = platform_audio });
     const run_platform_audio_tests = b.addRunArtifact(platform_audio_tests);
+    const native_audio_tests = b.addTest(.{ .root_module = native_audio });
+    native_audio_tests.root_module.linkFramework("CoreAudio", .{});
+    native_audio_tests.root_module.linkFramework("CoreFoundation", .{});
+    const run_native_audio_tests = b.addRunArtifact(native_audio_tests);
     const test_step = b.step("test", "Run Robine model, UI, and audio contract tests");
     test_step.dependOn(&run_tests.step);
     test_step.dependOn(&run_platform_audio_tests.step);
+    test_step.dependOn(&run_native_audio_tests.step);
 }
