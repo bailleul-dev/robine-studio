@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const max_channels = 16;
+const max_kernel_taps = 64;
 
 const NamFile = struct {
     version: []const u8,
@@ -128,7 +129,9 @@ const Conv1d = struct {
         dilation: usize,
         with_bias: bool,
     ) !Conv1d {
-        if (kernel_size == 0 or dilation == 0) return error.InvalidNamDimensions;
+        if (kernel_size == 0 or kernel_size > max_kernel_taps or dilation == 0) {
+            return error.InvalidNamDimensions;
+        }
         const channel_weights = std.math.mul(usize, in_channels, out_channels) catch
             return error.InvalidNamDimensions;
         const weight_count = std.math.mul(usize, channel_weights, kernel_size) catch
@@ -176,20 +179,29 @@ const Conv1d = struct {
             self.history[channel * self.history_frames + self.write_index] = sample;
         }
 
+        var tap_positions: [max_kernel_taps]usize = undefined;
+        for (tap_positions[0..self.kernel_size], 0..) |*position, tap| {
+            const lookback = (self.kernel_size - 1 - tap) * self.dilation;
+            position.* = if (self.write_index >= lookback)
+                self.write_index - lookback
+            else
+                self.write_index + self.history_frames - lookback;
+        }
+
         for (output, 0..) |*value, out_index| {
             var sum: f32 = if (self.bias.len == 0) 0.0 else self.bias[out_index];
             for (0..self.in_channels) |in_index| {
-                for (0..self.kernel_size) |tap| {
-                    const lookback = (self.kernel_size - 1 - tap) * self.dilation;
-                    const history_index = (self.write_index + self.history_frames - lookback) % self.history_frames;
-                    const sample = self.history[in_index * self.history_frames + history_index];
-                    const weight_index = (out_index * self.in_channels + in_index) * self.kernel_size + tap;
-                    sum += self.weights[weight_index] * sample;
+                const history = self.history[in_index * self.history_frames ..][0..self.history_frames];
+                const weight_start = (out_index * self.in_channels + in_index) * self.kernel_size;
+                const weights = self.weights[weight_start..][0..self.kernel_size];
+                for (weights, tap_positions[0..self.kernel_size]) |weight, history_index| {
+                    sum += weight * history[history_index];
                 }
             }
             value.* = sum;
         }
-        self.write_index = (self.write_index + 1) % self.history_frames;
+        self.write_index += 1;
+        if (self.write_index == self.history_frames) self.write_index = 0;
     }
 };
 

@@ -19,8 +19,8 @@ live input, cabinet IRs, routing controls, and plugin hosts are introduced.
 - Unsupported NAM versions, architectures, sample rates, or topology features
   MUST fail explicitly during non-real-time loading.
 - Both the three-channel lightweight and eight-channel full submodels MUST
-  remain loadable. Studio selects the lightweight capture for live playback
-  until the full model meets the real-time budget after Zig vectorization.
+  remain loadable. Studio MUST select the full eight-channel capture for live
+  playback; performance work MUST NOT silently reduce model quality.
 - The implementation MUST compile as a standalone object for Windows and Linux
   targets without introducing target-specific DSP source.
 
@@ -54,7 +54,7 @@ like a captured amplifier output rather than a miked guitar cabinet.
 - WAV decoding verifies mono, 48 kHz PCM24 input.
 - The release application negotiates 48 kHz CoreAudio output and starts with a
   64-frame callback on the reference macOS machine.
-- The lightweight model completes in real time while the Studio window remains
+- The full eight-channel model completes in real time while the Studio window remains
   interactive.
 - The NAM module compiles to Windows COFF and Linux ELF objects using Zig target
   selection alone.

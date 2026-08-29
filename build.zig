@@ -85,6 +85,21 @@ pub fn build(b: *std.Build) void {
     const audio_probe_step = b.step("audio-probe", "List Core Audio duplex devices");
     audio_probe_step.dependOn(&run_audio_probe.step);
 
+    const nam_bench_module = b.createModule(.{
+        .root_source_file = b.path("src/hosts/nam_bench/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    nam_bench_module.addImport("robine", robine);
+    nam_bench_module.addImport("audio_assets", audio_assets);
+    const nam_bench = b.addExecutable(.{
+        .name = "robine-nam-bench",
+        .root_module = nam_bench_module,
+    });
+    const run_nam_bench = b.addRunArtifact(nam_bench);
+    const nam_bench_step = b.step("nam-bench", "Benchmark full-quality NAM fixture rendering");
+    nam_bench_step.dependOn(&run_nam_bench.step);
+
     const install_app_binary = b.addInstallFileWithDir(
         studio.getEmittedBin(),
         .{ .custom = "Robine Studio.app/Contents/MacOS" },

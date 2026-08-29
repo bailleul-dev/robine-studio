@@ -25,7 +25,7 @@ pub const StartupPlayer = struct {
         errdefer self.source.deinit(allocator);
         if (self.source.channels != 1) return error.DevelopmentInputMustBeMono;
 
-        self.model = try robine.audio.nam.Model.loadQuality(allocator, assets.default_nam, .lightweight);
+        self.model = try robine.audio.nam.Model.loadQuality(allocator, assets.default_nam, .full);
         errdefer self.model.deinit();
         if (@abs(self.model.sample_rate - @as(f64, @floatFromInt(self.source.sample_rate))) > 0.5) {
             return error.SourceAndNamSampleRatesDiffer;
