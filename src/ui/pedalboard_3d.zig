@@ -28,9 +28,9 @@ pub const ViewProfile = struct {
 };
 
 pub const studio_profile = ViewProfile{
-    .camera = .{ 5.0, 9.2, 5.8 },
-    .target = .{ -14.3, 1.45, 0.3 },
-    .field_of_view_degrees = 42.0,
+    .camera = .{ -5.8, 7.2, 5.4 },
+    .target = .{ -17.0, 1.10, 0.1 },
+    .field_of_view_degrees = 40.0,
     .key_position = .{ 5.5, 10.5, -13.5 },
     .key_size = .{ 2.40, 3.20 },
     .key_intensity = 1_250.0,
@@ -52,9 +52,9 @@ pub const rig_camera = CameraPose{
 };
 
 pub const amplifier_camera = CameraPose{
-    .camera = .{ -15.0, 2.45, 0 },
-    .target = .{ -19.70, 2.33, 0 },
-    .field_of_view_degrees = 65.0,
+    .camera = .{ -17.10, 1.72, 0 },
+    .target = .{ -20.07, 1.53, 0 },
+    .field_of_view_degrees = 54.0,
 };
 
 pub const studio_viewport = struct {
@@ -74,13 +74,23 @@ pub const BuildState = struct {
     pedal_footswitch_masks: []const u8 = &.{},
 };
 
-const combo_center = [3]f32{ 0, 2.33, -5.55 };
-const combo_size = [3]f32{ 7.20, 4.10, 1.78 };
-const equipment_offset_x: f32 = -14.15;
-const millimetres_to_world: f32 = 0.022;
-// Reserve the physical envelope of two opposing side sockets between pedals.
-const pedal_gap: f32 = 0.52;
+// One world unit is 200 mm. Scene architecture, equipment bodies, and their
+// hardware all share this physical scale.
+const millimetres_to_world: f32 = 0.005;
+const legacy_pedal_scale: f32 = 0.022;
+const pedal_detail_scale: f32 = millimetres_to_world / legacy_pedal_scale;
+
+// Reference combo: 620 x 500 x 260 mm, resting on the 56 mm-high floor.
+const combo_center = [3]f32{ 0, 1.53, -5.55 };
+const combo_size = [3]f32{ 3.10, 2.50, 1.30 };
+const equipment_offset_x: f32 = -14.52;
+// 40 mm clear space leaves room for opposing side-mounted jack hardware.
+const pedal_gap: f32 = 0.20;
 const effects_loop_row_depth: f32 = -3.0;
+
+fn pedalDetail(value: f32) f32 {
+    return value * pedal_detail_scale;
+}
 
 pub const Mesh = struct {
     pub const max_vertices = 100_000;
@@ -220,8 +230,8 @@ pub fn hitTestPedalModeSwitch(
     const center_world = equipmentPoint(canonical_center);
     const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
     const center = projectToWindow(center_world, rig_camera, viewport_aspect) orelse return false;
-    const edge_x = projectToWindow(equipmentPoint(.{ canonical_center[0] + 0.30, canonical_center[1], canonical_center[2] }), rig_camera, viewport_aspect) orelse return false;
-    const edge_z = projectToWindow(equipmentPoint(.{ canonical_center[0], canonical_center[1], canonical_center[2] + 0.38 }), rig_camera, viewport_aspect) orelse return false;
+    const edge_x = projectToWindow(equipmentPoint(.{ canonical_center[0] + pedalDetail(0.30), canonical_center[1], canonical_center[2] }), rig_camera, viewport_aspect) orelse return false;
+    const edge_z = projectToWindow(equipmentPoint(.{ canonical_center[0], canonical_center[1], canonical_center[2] + pedalDetail(0.38) }), rig_camera, viewport_aspect) orelse return false;
     const radius_x = @max(@abs(edge_x[0] - center[0]) * 1.6, 0.025);
     const radius_y = @max(@abs(edge_z[1] - center[1]) * 1.6, 0.035);
     const dx = (point[0] - center[0]) / radius_x;
@@ -244,12 +254,12 @@ pub fn hitTestPedalFootswitch(
         ((@as(f32, @floatFromInt(footswitch_index)) + 1.0) /
             @as(f32, @floatFromInt(count + 1)) - 0.5) * 0.72;
     const z = placement.base[2] + placement.size[2] * 0.29;
-    const canonical_center = [3]f32{ x, placement.base[1] + placement.size[1] + 0.18, z };
+    const canonical_center = [3]f32{ x, placement.base[1] + placement.size[1] + pedalDetail(0.18), z };
     const center_world = equipmentPoint(canonical_center);
     const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
     const center = projectToWindow(center_world, rig_camera, viewport_aspect) orelse return false;
-    const edge_x = projectToWindow(equipmentPoint(.{ canonical_center[0] + 0.34, canonical_center[1], canonical_center[2] }), rig_camera, viewport_aspect) orelse return false;
-    const edge_z = projectToWindow(equipmentPoint(.{ canonical_center[0], canonical_center[1], canonical_center[2] + 0.34 }), rig_camera, viewport_aspect) orelse return false;
+    const edge_x = projectToWindow(equipmentPoint(.{ canonical_center[0] + pedalDetail(0.34), canonical_center[1], canonical_center[2] }), rig_camera, viewport_aspect) orelse return false;
+    const edge_z = projectToWindow(equipmentPoint(.{ canonical_center[0], canonical_center[1], canonical_center[2] + pedalDetail(0.34) }), rig_camera, viewport_aspect) orelse return false;
     const radius_x = @max(@abs(edge_x[0] - center[0]) * 1.55, 0.025);
     const radius_y = @max(@abs(edge_z[1] - center[1]) * 1.55, 0.030);
     const dx = (point[0] - center[0]) / radius_x;
@@ -265,7 +275,7 @@ const PedalPlacement = struct {
 fn modeSwitchCenter(placement: PedalPlacement) [3]f32 {
     return .{
         placement.base[0],
-        placement.base[1] + placement.size[1] + 0.29,
+        placement.base[1] + placement.size[1] + pedalDetail(0.29),
         placement.base[2] - placement.size[2] * 0.01,
     };
 }
@@ -294,7 +304,7 @@ fn pedalPlacement(rig: *const demo.Rig, pedal_index: usize) ?PedalPlacement {
             .before_amplifier => 0,
             .effects_loop => effects_loop_row_depth,
         };
-        if (index == pedal_index) return .{ .base = .{ center_x, 0.24, row_depth }, .size = size };
+        if (index == pedal_index) return .{ .base = .{ center_x, 0.37, row_depth }, .size = size };
         cursor -= size[0] + pedal_gap;
     }
     return null;
@@ -336,9 +346,10 @@ fn addPedalboard(mesh: *Mesh) !void {
     const floor_center_z: f32 = 9.0;
     const floor_min_z = floor_center_z - floor_depth * 0.5;
     const floor_max_z = floor_center_z + floor_depth * 0.5;
-    const column_count: usize = 24;
+    // 180 mm boards, 4 mm expansion grooves, and 1.48 m staggered lengths.
+    const column_count: usize = 46;
     const plank_length: f32 = 7.4;
-    const groove: f32 = 0.055;
+    const groove: f32 = 0.020;
     const plank_width = (floor_width - groove * @as(f32, @floatFromInt(column_count - 1))) /
         @as(f32, @floatFromInt(column_count));
 
@@ -378,7 +389,8 @@ fn addPedalboard(mesh: *Mesh) !void {
 
 fn addStudioRoom(mesh: *Mesh) !void {
     const floor_top: f32 = 0.28;
-    const wall_height: f32 = 12.0;
+    // 3.2 m studio walls and a nearly floor-to-ceiling 2.66 m overlook.
+    const wall_height: f32 = 16.0;
     const back_z: f32 = -8.92;
     const side_x: f32 = 20.96;
     const side_center_z: f32 = 9.0;
@@ -387,8 +399,8 @@ fn addStudioRoom(mesh: *Mesh) !void {
 
     // The rear wall is architectural geometry around a broad overlook, not a
     // textured photograph pasted onto the room.
-    const window_bottom: f32 = 1.05;
-    const window_top: f32 = 7.75;
+    const window_bottom: f32 = 0.90;
+    const window_top: f32 = 14.20;
     const window_half_width: f32 = 17.55;
     try addBox(mesh, .{ -19.25, wall_center_y, back_z }, .{ 3.42, wall_height, 0.24 }, materials.studio_wall);
     try addBox(mesh, .{ 19.25, wall_center_y, back_z }, .{ 3.42, wall_height, 0.24 }, materials.studio_wall);
@@ -402,17 +414,17 @@ fn addStudioRoom(mesh: *Mesh) !void {
     try addBox(mesh, .{ side_x - 0.15, floor_top + 0.18, side_center_z }, .{ 0.16, 0.34, side_depth - 0.2 }, materials.studio_wall_trim);
 
     try addStudioRug(mesh);
-    try addLeftWallAcousticPanel(mesh, -7.6, 4.6, 5.8);
-    try addLeftWallAcousticPanel(mesh, 7.6, 4.6, 5.8);
-    try addSideWoodSconce(mesh, .{ -side_x + 0.30, 3.25, -4.65 }, true);
-    try addSideWoodSconce(mesh, .{ -side_x + 0.30, 3.25, 4.65 }, true);
+    try addLeftWallAcousticPanel(mesh, -7.6, 4.6, 9.0);
+    try addLeftWallAcousticPanel(mesh, 7.6, 4.6, 9.0);
+    try addSideWoodSconce(mesh, .{ -side_x + 0.30, 8.0, -4.65 }, true);
+    try addSideWoodSconce(mesh, .{ -side_x + 0.30, 8.0, 4.65 }, true);
 
     try addWindowWall(mesh, back_z, window_bottom, window_top, window_half_width);
     try addOverlookLandscape(mesh, back_z);
 
     // Keep the familiar warm sconces on the solid outer piers.
-    try addWoodWallSconce(mesh, .{ -19.22, 2.15, back_z + 0.26 });
-    try addWoodWallSconce(mesh, .{ 19.22, 2.15, back_z + 0.26 });
+    try addWoodWallSconce(mesh, .{ -19.22, 8.0, back_z + 0.26 });
+    try addWoodWallSconce(mesh, .{ 19.22, 8.0, back_z + 0.26 });
 }
 
 fn addStudioRug(mesh: *Mesh) !void {
@@ -431,7 +443,7 @@ fn addStudioRug(mesh: *Mesh) !void {
 
 fn addLeftWallAcousticPanel(mesh: *Mesh, z: f32, width: f32, height: f32) !void {
     const wall_x: f32 = -20.96;
-    const center_y: f32 = 3.55;
+    const center_y: f32 = 7.5;
     try addBox(mesh, .{ wall_x + 0.20, center_y, z }, .{ 0.22, height, width }, materials.acoustic_panel);
     const slat_count: usize = 14;
     for (0..slat_count) |index| {
@@ -460,7 +472,7 @@ fn addWindowWall(mesh: *Mesh, back_z: f32, bottom: f32, top: f32, half_width: f3
 fn addOverlookLandscape(mesh: *Mesh, back_z: f32) !void {
     // The view is assembled from a luminous sky and independent terrain
     // layers. Its silhouette intentionally does not reproduce the reference.
-    try addBox(mesh, .{ 0, 7.7, back_z - 20.0 }, .{ 60.0, 15.0, 0.18 }, materials.sky);
+    try addBox(mesh, .{ 0, 12.0, back_z - 20.0 }, .{ 60.0, 30.0, 0.18 }, materials.sky);
     try addBox(mesh, .{ 0, 2.15, back_z - 19.8 }, .{ 60.0, 1.8, 0.20 }, materials.horizon);
     try addBox(mesh, .{ 0, 0.04, back_z - 9.8 }, .{ 60.0, 0.18, 20.0 }, materials.valley);
     try addCylinder(mesh, .{ -7.4, 5.85, back_z - 19.65 }, 0.58, 0.16, materials.sun, .z);
@@ -668,12 +680,12 @@ fn addPedal(
     const body_material = accentMaterial(pedal.accent);
     if (pedal.presentation == .open) {
         const tray_height = size[1] * 0.42;
-        try addBeveledBox(mesh, .{ base[0], base[1] + tray_height * 0.5, base[2] }, .{ size[0], tray_height, size[2] }, 0.10, darkened(body_material, 0.55));
-        try addBox(mesh, .{ base[0], base[1] + tray_height + 0.035, base[2] }, .{ size[0] * 0.78, 0.07, size[2] * 0.72 }, materials.pcb);
+        try addBeveledBox(mesh, .{ base[0], base[1] + tray_height * 0.5, base[2] }, .{ size[0], tray_height, size[2] }, pedalDetail(0.10), darkened(body_material, 0.55));
+        try addBox(mesh, .{ base[0], base[1] + tray_height + pedalDetail(0.035), base[2] }, .{ size[0] * 0.78, pedalDetail(0.07), size[2] * 0.72 }, materials.pcb);
         try addOpenLid(mesh, base, size, body_material);
         try addComponents(mesh, base, size, tray_height);
     } else {
-        try addBeveledBox(mesh, .{ base[0], base[1] + size[1] * 0.5, base[2] }, size, 0.10, body_material);
+        try addBeveledBox(mesh, .{ base[0], base[1] + size[1] * 0.5, base[2] }, size, pedalDetail(0.10), body_material);
         try addControls(mesh, pedal, base, size);
         if (pedal.mode_switch != null) try addThreeWayToggle(mesh, base, size, mode);
         try addFootswitches(mesh, pedal, base, size, enabled, footswitch_mask);
@@ -691,9 +703,9 @@ fn addThreeWayToggle(
     const origin = [3]f32{ base[0], top, base[2] - size[2] * 0.01 };
 
     // Hex nut, raised threaded collar, and reflective washer remain stationary.
-    try addCylinderSegments(mesh, .{ origin[0], top + 0.035, origin[2] }, 0.145, 0.070, materials.polished_chrome, .y, 6);
-    try addIndicatorWasher(mesh, .{ origin[0], top + 0.070, origin[2] }, 0.070, 0.126);
-    try addCylinder(mesh, .{ origin[0], top + 0.105, origin[2] }, 0.073, 0.110, materials.chrome, .y);
+    try addCylinderSegments(mesh, .{ origin[0], top + pedalDetail(0.035), origin[2] }, pedalDetail(0.145), pedalDetail(0.070), materials.polished_chrome, .y, 6);
+    try addIndicatorWasher(mesh, .{ origin[0], top + pedalDetail(0.070), origin[2] }, pedalDetail(0.070), pedalDetail(0.126));
+    try addCylinder(mesh, .{ origin[0], top + pedalDetail(0.105), origin[2] }, pedalDetail(0.073), pedalDetail(0.110), materials.chrome, .y);
 
     const depth_tilt: f32 = switch (mode) {
         .low => 0.36,
@@ -701,24 +713,24 @@ fn addThreeWayToggle(
         .high => -0.36,
     };
     const direction = normalized3(.{ 0, 0.94, depth_tilt });
-    const lever_start = [3]f32{ origin[0], top + 0.125, origin[2] };
-    const lever_length: f32 = 0.54;
+    const lever_start = [3]f32{ origin[0], top + pedalDetail(0.125), origin[2] };
+    const lever_length: f32 = pedalDetail(0.54);
     const center = [3]f32{
         lever_start[0] + direction[0] * lever_length * 0.5,
         lever_start[1] + direction[1] * lever_length * 0.5,
         lever_start[2] + direction[2] * lever_length * 0.5,
     };
-    try addOrientedCylinder(mesh, center, direction, 0.052, lever_length, materials.polished_chrome, 32);
+    try addOrientedCylinder(mesh, center, direction, pedalDetail(0.052), lever_length, materials.polished_chrome, 32);
 }
 
 fn addOpenLid(mesh: *Mesh, base: [3]f32, size: [3]f32, material: Material) !void {
     const lid_center = [3]f32{ base[0], base[1] + size[1] * 0.82, base[2] - size[2] * 0.53 };
-    try addBox(mesh, lid_center, .{ size[0] * 0.96, size[1] * 1.25, 0.12 }, material);
-    try addBox(mesh, .{ lid_center[0], lid_center[1], lid_center[2] + 0.07 }, .{ size[0] * 0.76, size[1] * 0.96, 0.04 }, darkened(material, 0.18));
+    try addBox(mesh, lid_center, .{ size[0] * 0.96, size[1] * 1.25, pedalDetail(0.12) }, material);
+    try addBox(mesh, .{ lid_center[0], lid_center[1], lid_center[2] + pedalDetail(0.07) }, .{ size[0] * 0.76, size[1] * 0.96, pedalDetail(0.04) }, darkened(material, 0.18));
 }
 
 fn addComponents(mesh: *Mesh, base: [3]f32, size: [3]f32, tray_height: f32) !void {
-    const top = base[1] + tray_height + 0.10;
+    const top = base[1] + tray_height + pedalDetail(0.10);
     var row: usize = 0;
     while (row < 3) : (row += 1) {
         var column: usize = 0;
@@ -726,7 +738,7 @@ fn addComponents(mesh: *Mesh, base: [3]f32, size: [3]f32, tray_height: f32) !voi
             const x = base[0] + (@as(f32, @floatFromInt(column)) - 1.0) * size[0] * 0.23;
             const z = base[2] + (@as(f32, @floatFromInt(row)) - 1.0) * size[2] * 0.18;
             const material = if ((row + column) % 2 == 0) materials.pointer else materials.black_metal;
-            try addBox(mesh, .{ x, top + 0.055, z }, .{ size[0] * 0.13, 0.11, size[2] * 0.08 }, material);
+            try addBox(mesh, .{ x, top + pedalDetail(0.055), z }, .{ size[0] * 0.13, pedalDetail(0.11), size[2] * 0.08 }, material);
         }
     }
 }
@@ -743,7 +755,7 @@ fn addControls(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void
     else
         @min(count, 2);
     const rows = (count + columns - 1) / columns;
-    const radius = @min(0.27, size[0] / (@as(f32, @floatFromInt(columns)) * 3.4));
+    const radius = @min(pedalDetail(0.27), size[0] / (@as(f32, @floatFromInt(columns)) * 3.4));
     for (pedal.controls, 0..) |control, index| {
         const column = index % columns;
         const row = index / columns;
@@ -786,12 +798,12 @@ fn addFootswitches(
         const top = base[1] + size[1];
         const led_z = z - size[2] * 0.16;
         try addFootswitchHardware(mesh, .{ x, top, z });
-        try addIndicatorWasher(mesh, .{ x, top + 0.004, led_z }, 0.063, 0.112);
-        try addCylinder(mesh, .{ x, top + 0.072, led_z }, 0.060, 0.080, ledLensMaterial(brightness, indicator_color), .y);
-        try addCylinder(mesh, .{ x, top + 0.126, led_z }, 0.018, 0.024, ledCoreMaterial(brightness, indicator_color), .y);
+        try addIndicatorWasher(mesh, .{ x, top + pedalDetail(0.004), led_z }, pedalDetail(0.063), pedalDetail(0.112));
+        try addCylinder(mesh, .{ x, top + pedalDetail(0.072), led_z }, pedalDetail(0.060), pedalDetail(0.080), ledLensMaterial(brightness, indicator_color), .y);
+        try addCylinder(mesh, .{ x, top + pedalDetail(0.126), led_z }, pedalDetail(0.018), pedalDetail(0.024), ledCoreMaterial(brightness, indicator_color), .y);
         try mesh.addEmissiveLight(.{
-            .position = .{ x, top + 0.16, led_z },
-            .radius = 0.62,
+            .position = .{ x, top + pedalDetail(0.16), led_z },
+            .radius = pedalDetail(0.62),
             .color = indicatorLightColor(indicator_color),
             .intensity = 1.55 * brightness,
         });
@@ -803,20 +815,20 @@ fn addChickenHeadKnob(mesh: *Mesh, origin: [3]f32, radius: f32, angle: f32) !voi
     const perpendicular = [3]f32{ @cos(angle), 0, @sin(angle) };
     const skirt_profile = [_]LatheRing{
         .{ .height = 0.00, .radius = radius * 1.22 },
-        .{ .height = 0.08, .radius = radius * 1.22 },
-        .{ .height = 0.13, .radius = radius * 1.02 },
-        .{ .height = 0.18, .radius = radius * 0.76 },
+        .{ .height = pedalDetail(0.08), .radius = radius * 1.22 },
+        .{ .height = pedalDetail(0.13), .radius = radius * 1.02 },
+        .{ .height = pedalDetail(0.18), .radius = radius * 0.76 },
     };
     try addLathedY(mesh, origin, &skirt_profile, materials.knob_plastic);
     try addBeveledChickenGrip(mesh, origin, direction, perpendicular, radius);
 
-    const stripe_center = knobPoint(origin, direction, perpendicular, radius * 0.22, 0, 0.512);
-    try addOrientedBox(mesh, stripe_center, direction, perpendicular, radius * 0.060, radius * 0.48, 0.018, materials.knob_indicator);
+    const stripe_center = knobPoint(origin, direction, perpendicular, radius * 0.22, 0, pedalDetail(0.512));
+    try addOrientedBox(mesh, stripe_center, direction, perpendicular, radius * 0.060, radius * 0.48, pedalDetail(0.018), materials.knob_indicator);
 
-    const stripe_top_left = knobPoint(origin, direction, perpendicular, radius * 0.728, -radius * 0.060, 0.475);
-    const stripe_top_right = knobPoint(origin, direction, perpendicular, radius * 0.728, radius * 0.060, 0.475);
-    const stripe_bottom_right = knobPoint(origin, direction, perpendicular, radius * 0.728, radius * 0.060, 0.18);
-    const stripe_bottom_left = knobPoint(origin, direction, perpendicular, radius * 0.728, -radius * 0.060, 0.18);
+    const stripe_top_left = knobPoint(origin, direction, perpendicular, radius * 0.728, -radius * 0.060, pedalDetail(0.475));
+    const stripe_top_right = knobPoint(origin, direction, perpendicular, radius * 0.728, radius * 0.060, pedalDetail(0.475));
+    const stripe_bottom_right = knobPoint(origin, direction, perpendicular, radius * 0.728, radius * 0.060, pedalDetail(0.18));
+    const stripe_bottom_left = knobPoint(origin, direction, perpendicular, radius * 0.728, -radius * 0.060, pedalDetail(0.18));
     try addQuad(mesh, stripe_top_left, stripe_bottom_left, stripe_bottom_right, stripe_top_right, direction, materials.knob_indicator);
 }
 
@@ -831,9 +843,9 @@ fn addBeveledChickenGrip(mesh: *Mesh, origin: [3]f32, direction: [3]f32, perpend
         .{ -0.40, 0.44 },
         .{ -0.52, 0.30 },
     };
-    const lower_height: f32 = 0.12;
-    const shoulder_height: f32 = 0.43;
-    const top_height: f32 = 0.50;
+    const lower_height: f32 = pedalDetail(0.12);
+    const shoulder_height: f32 = pedalDetail(0.43);
+    const top_height: f32 = pedalDetail(0.50);
     const top_scale: f32 = 0.86;
 
     for (0..footprint.len) |index| {
@@ -861,16 +873,16 @@ fn addBeveledChickenGrip(mesh: *Mesh, origin: [3]f32, direction: [3]f32, perpend
 }
 
 fn addFootswitchHardware(mesh: *Mesh, origin: [3]f32) !void {
-    try addCylinderSegments(mesh, .{ origin[0], origin[1] + 0.027, origin[2] }, 0.23, 0.054, materials.polished_chrome, .y, 6);
-    try addIndicatorWasher(mesh, .{ origin[0], origin[1] + 0.052, origin[2] }, 0.112, 0.205);
+    try addCylinderSegments(mesh, .{ origin[0], origin[1] + pedalDetail(0.027), origin[2] }, pedalDetail(0.23), pedalDetail(0.054), materials.polished_chrome, .y, 6);
+    try addIndicatorWasher(mesh, .{ origin[0], origin[1] + pedalDetail(0.052), origin[2] }, pedalDetail(0.112), pedalDetail(0.205));
     const actuator_profile = [_]LatheRing{
-        .{ .height = 0.00, .radius = 0.112 },
-        .{ .height = 0.10, .radius = 0.112 },
-        .{ .height = 0.125, .radius = 0.155 },
-        .{ .height = 0.215, .radius = 0.155 },
-        .{ .height = 0.240, .radius = 0.140 },
+        .{ .height = 0.00, .radius = pedalDetail(0.112) },
+        .{ .height = pedalDetail(0.10), .radius = pedalDetail(0.112) },
+        .{ .height = pedalDetail(0.125), .radius = pedalDetail(0.155) },
+        .{ .height = pedalDetail(0.215), .radius = pedalDetail(0.155) },
+        .{ .height = pedalDetail(0.240), .radius = pedalDetail(0.140) },
     };
-    try addLathedY(mesh, .{ origin[0], origin[1] + 0.060, origin[2] }, &actuator_profile, materials.polished_chrome);
+    try addLathedY(mesh, .{ origin[0], origin[1] + pedalDetail(0.060), origin[2] }, &actuator_profile, materials.polished_chrome);
 }
 
 fn knobPoint(origin: [3]f32, direction: [3]f32, perpendicular: [3]f32, along: f32, lateral: f32, height: f32) [3]f32 {
@@ -920,8 +932,8 @@ fn addPorts(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void {
             .top => {
                 const x = base[0] + slot * size[0];
                 const z = base[2] - size[2] * 0.39;
-                try addCylinder(mesh, .{ x, base[1] + size[1] + 0.08, z }, 0.14, 0.16, materials.chrome, .y);
-                try addCylinder(mesh, .{ x, base[1] + size[1] + 0.17, z }, 0.075, 0.08, materials.rubber, .y);
+                try addCylinder(mesh, .{ x, base[1] + size[1] + pedalDetail(0.08), z }, pedalDetail(0.14), pedalDetail(0.16), materials.chrome, .y);
+                try addCylinder(mesh, .{ x, base[1] + size[1] + pedalDetail(0.17), z }, pedalDetail(0.075), pedalDetail(0.08), materials.rubber, .y);
             },
             .left_side => {
                 try addSideJack(
@@ -946,49 +958,49 @@ fn addSideJack(mesh: *Mesh, mount: [3]f32, outward: f32) !void {
     // threaded barrel, insulating collar, then the recessed connector mouth.
     try addCylinderSegments(
         mesh,
-        .{ mount[0] + outward * 0.035, mount[1], mount[2] },
-        0.185,
-        0.070,
+        .{ mount[0] + outward * pedalDetail(0.035), mount[1], mount[2] },
+        pedalDetail(0.185),
+        pedalDetail(0.070),
         materials.polished_chrome,
         .x,
         6,
     );
     try addCylinder(
         mesh,
-        .{ mount[0] + outward * 0.078, mount[1], mount[2] },
-        0.158,
-        0.034,
+        .{ mount[0] + outward * pedalDetail(0.078), mount[1], mount[2] },
+        pedalDetail(0.158),
+        pedalDetail(0.034),
         materials.polished_chrome,
         .x,
     );
     try addCylinder(
         mesh,
-        .{ mount[0] + outward * 0.130, mount[1], mount[2] },
-        0.119,
-        0.105,
+        .{ mount[0] + outward * pedalDetail(0.130), mount[1], mount[2] },
+        pedalDetail(0.119),
+        pedalDetail(0.105),
         materials.chrome,
         .x,
     );
     try addCylinder(
         mesh,
-        .{ mount[0] + outward * 0.187, mount[1], mount[2] },
-        0.101,
-        0.045,
+        .{ mount[0] + outward * pedalDetail(0.187), mount[1], mount[2] },
+        pedalDetail(0.101),
+        pedalDetail(0.045),
         materials.black_metal,
         .x,
     );
     try addCylinder(
         mesh,
-        .{ mount[0] + outward * 0.213, mount[1], mount[2] },
-        0.083,
-        0.026,
+        .{ mount[0] + outward * pedalDetail(0.213), mount[1], mount[2] },
+        pedalDetail(0.083),
+        pedalDetail(0.026),
         materials.polished_chrome,
         .x,
     );
     try addAxialDisc(
         mesh,
-        .{ mount[0] + outward * 0.228, mount[1], mount[2] },
-        0.058,
+        .{ mount[0] + outward * pedalDetail(0.228), mount[1], mount[2] },
+        pedalDetail(0.058),
         .x,
         outward,
         materials.rubber,
@@ -1140,10 +1152,10 @@ fn addIndicatorWasher(mesh: *Mesh, center: [3]f32, inner_radius: f32, outer_radi
     };
     const profile = [_]ProfilePoint{
         .{ .radius = outer_radius, .height = 0.000, .radial_normal = 0.99, .up_normal = 0.12 },
-        .{ .radius = outer_radius * 0.96, .height = 0.018, .radial_normal = 0.76, .up_normal = 0.65 },
-        .{ .radius = inner_radius + (outer_radius - inner_radius) * 0.67, .height = 0.036, .radial_normal = 0.15, .up_normal = 0.99 },
-        .{ .radius = inner_radius + (outer_radius - inner_radius) * 0.24, .height = 0.031, .radial_normal = -0.35, .up_normal = 0.94 },
-        .{ .radius = inner_radius, .height = 0.010, .radial_normal = -0.80, .up_normal = 0.60 },
+        .{ .radius = outer_radius * 0.96, .height = pedalDetail(0.018), .radial_normal = 0.76, .up_normal = 0.65 },
+        .{ .radius = inner_radius + (outer_radius - inner_radius) * 0.67, .height = pedalDetail(0.036), .radial_normal = 0.15, .up_normal = 0.99 },
+        .{ .radius = inner_radius + (outer_radius - inner_radius) * 0.24, .height = pedalDetail(0.031), .radial_normal = -0.35, .up_normal = 0.94 },
+        .{ .radius = inner_radius, .height = pedalDetail(0.010), .radial_normal = -0.80, .up_normal = 0.60 },
     };
     const segments: usize = 48;
     for (0..profile.len - 1) |profile_index| {
@@ -1503,6 +1515,15 @@ test "combo amplifier projects to a clickable rig-view region" {
     try std.testing.expect(!hitTestAmplifier(.{ 0.90, -0.80 }, 1200.0 / 760.0));
 }
 
+test "studio equipment shares a physical world scale" {
+    const single_width = demo.rig.pedals[0].enclosure.dimensions.width * millimetres_to_world;
+    const single_depth = demo.rig.pedals[0].enclosure.dimensions.depth * millimetres_to_world;
+    try std.testing.expectApproxEqAbs(@as(f32, 0.35), single_width, 0.0001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.610), single_depth, 0.0001);
+    try std.testing.expectApproxEqAbs(@as(f32, 620.0 / 70.0), combo_size[0] / single_width, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 500.0 / 55.0), combo_size[1] / (demo.rig.pedals[0].enclosure.dimensions.height * millimetres_to_world), 0.001);
+}
+
 test "focused combo remains clickable for direct return navigation" {
     const projected_center = projectToWindow(equipmentPoint(combo_center), amplifier_camera, (1200.0 / 760.0) * studio_viewport.width / studio_viewport.height) orelse return error.ComboBehindCamera;
     try std.testing.expect(hitTestFocusedAmplifier(projected_center, 1200.0 / 760.0));
@@ -1513,7 +1534,7 @@ test "first semantic footswitch is picked at its projected position" {
     const placement = pedalPlacement(&demo.rig, 0) orelse return error.MissingFirstPedal;
     const center_world = [3]f32{
         placement.base[0],
-        placement.base[1] + placement.size[1] + 0.18,
+        placement.base[1] + placement.size[1] + pedalDetail(0.18),
         placement.base[2] + placement.size[2] * 0.29,
     };
     const projected = projectToWindow(
@@ -1562,7 +1583,7 @@ test "both King of Tone footswitches are independently pickable" {
             ((@as(f32, @floatFromInt(footswitch_index)) + 1.0) / 3.0 - 0.5) * 0.72;
         const center_world = [3]f32{
             x,
-            placement.base[1] + placement.size[1] + 0.18,
+            placement.base[1] + placement.size[1] + pedalDetail(0.18),
             placement.base[2] + placement.size[2] * 0.29,
         };
         const projected = projectToWindow(

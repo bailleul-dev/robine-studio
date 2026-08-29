@@ -106,6 +106,20 @@ selection outlines, tooltips, and Studio-only inspection chrome.
 Product descriptions MUST NOT provide screen-space coordinates. Visual recipe
 authors MAY define geometry in a catalog part's encapsulated local frame.
 
+## Physical scale discipline
+
+All scene geometry is solved from one physical coordinate system. Catalog
+dimensions remain authoritative in millimetres; the current renderer maps 200 mm
+to one world unit only at the projection boundary. Cameras and lights may use
+artistic placement, but they MUST NOT compensate for incorrectly scaled objects.
+
+The reference scene locks representative measurements: a generic single pedal is
+70 x 122 x 55 mm, the reference combo is 620 x 500 x 260 mm, and the studio is
+approximately 8.4 x 7.2 x 3.2 m. Hardware such as knobs, footswitches, LEDs,
+jacks, floor boards, wall lights, and acoustic panels uses the same conversion.
+Changing the world-unit conversion MUST therefore preserve every ratio rather
+than resizing enclosure bodies alone.
+
 ## Compilation and updates
 
 Projection resolves equipment roles, assembly transforms, material and geometry
@@ -136,4 +150,5 @@ equipment roles or catalog recipes.
   connection graph.
 - A scene can be discarded and regenerated without losing instance state.
 - Invalid projection references produce semantic, source-oriented diagnostics.
-
+- Pedal, amplifier, room, and hardware ratios remain invariant when projection
+  scale changes.
