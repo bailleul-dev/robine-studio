@@ -74,7 +74,8 @@ pub const BuildState = struct {
 const combo_center = [3]f32{ 0, 2.33, -5.55 };
 const combo_size = [3]f32{ 7.20, 4.10, 1.78 };
 const millimetres_to_world: f32 = 0.022;
-const pedal_gap: f32 = 0.30;
+// Reserve the physical envelope of two opposing side sockets between pedals.
+const pedal_gap: f32 = 0.52;
 
 pub const Mesh = struct {
     pub const max_vertices = 100_000;
@@ -714,14 +715,14 @@ fn addPorts(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void {
             .left_side => {
                 try addSideJack(
                     mesh,
-                    .{ base[0] - size[0] * 0.5, base[1] + size[1] * 0.62, base[2] + slot * size[2] },
+                    .{ base[0] - size[0] * 0.5, base[1] + size[1] * 0.68, base[2] + slot * size[2] },
                     -1,
                 );
             },
             .right_side => {
                 try addSideJack(
                     mesh,
-                    .{ base[0] + size[0] * 0.5, base[1] + size[1] * 0.62, base[2] + slot * size[2] },
+                    .{ base[0] + size[0] * 0.5, base[1] + size[1] * 0.68, base[2] + slot * size[2] },
                     1,
                 );
             },

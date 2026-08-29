@@ -57,6 +57,8 @@ plug transform, and cable route from the same assembly.
   catalog mounting pattern.
 - Exact drilling positions belong to catalog geometry and assembly solving, not
   product descriptions or screen-space UI.
+- Pedal layout reserves the projected hardware envelope so two opposing bare
+  sockets do not intersect when enclosures are placed side by side.
 
 ## Acceptance criteria
 
