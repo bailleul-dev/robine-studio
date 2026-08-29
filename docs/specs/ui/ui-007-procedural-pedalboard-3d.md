@@ -14,7 +14,7 @@ not provide screen coordinates or renderer-specific triangles.
 The initial projection contains:
 
 - A staggered parquet floor extending beyond the complete 3D viewport, assembled
-  from reusable planks with narrow visible joints.
+  from long planks oriented along scene depth with narrow recessed grooves.
 - Gently rounded enclosures sized from `PedalEnclosure.dimensions` in millimetres.
 - Layout spacing derived from physical width and bounded semantic gaps.
 - Procedural knobs and pointers generated from the control collection.

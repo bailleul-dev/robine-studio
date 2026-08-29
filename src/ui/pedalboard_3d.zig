@@ -84,37 +84,41 @@ pub fn build(mesh: *Mesh, rig: *const demo.Rig) !void {
 fn addPedalboard(mesh: *Mesh) !void {
     const floor_width: f32 = 19.2;
     const floor_depth: f32 = 11.5;
-    const row_count: usize = 9;
-    const plank_length: f32 = 3.15;
-    const gap: f32 = 0.045;
-    const row_depth = (floor_depth - gap * @as(f32, @floatFromInt(row_count - 1))) /
-        @as(f32, @floatFromInt(row_count));
+    const column_count: usize = 17;
+    const plank_length: f32 = 7.4;
+    const groove: f32 = 0.055;
+    const plank_width = (floor_width - groove * @as(f32, @floatFromInt(column_count - 1))) /
+        @as(f32, @floatFromInt(column_count));
 
     try addBox(mesh, .{ 0, -0.02, 0 }, .{ floor_width + 0.28, 0.38, floor_depth + 0.28 }, materials.board_base);
 
-    for (0..row_count) |row| {
-        const z = -floor_depth * 0.5 + row_depth * 0.5 +
-            @as(f32, @floatFromInt(row)) * (row_depth + gap);
-        const stagger = if (row % 2 == 0) 0.0 else plank_length * 0.5;
-        var left = -floor_width * 0.5 - stagger;
-        var column: usize = 0;
-        while (left < floor_width * 0.5) : ({
-            left += plank_length;
-            column += 1;
+    for (0..column_count) |column| {
+        const x = -floor_width * 0.5 + plank_width * 0.5 +
+            @as(f32, @floatFromInt(column)) * (plank_width + groove);
+        const stagger = switch (column % 3) {
+            0 => 0.0,
+            1 => plank_length * 0.34,
+            else => plank_length * 0.67,
+        };
+        var front = -floor_depth * 0.5 - stagger;
+        var segment: usize = 0;
+        while (front < floor_depth * 0.5) : ({
+            front += plank_length;
+            segment += 1;
         }) {
-            const visible_left = @max(left, -floor_width * 0.5);
-            const visible_right = @min(left + plank_length - gap, floor_width * 0.5);
-            const visible_width = visible_right - visible_left;
-            if (visible_width <= 0.08) continue;
-            const material = switch ((row * 2 + column) % 3) {
+            const visible_front = @max(front, -floor_depth * 0.5);
+            const visible_back = @min(front + plank_length - groove, floor_depth * 0.5);
+            const visible_depth = visible_back - visible_front;
+            if (visible_depth <= 0.08) continue;
+            const material = switch ((column * 2 + segment) % 3) {
                 0 => materials.wood_a,
                 1 => materials.wood_b,
                 else => materials.wood_c,
             };
-            try addBox(mesh, .{ (visible_left + visible_right) * 0.5, 0.18, z }, .{
-                visible_width,
+            try addBox(mesh, .{ x, 0.18, (visible_front + visible_back) * 0.5 }, .{
+                plank_width,
                 0.20,
-                row_depth,
+                visible_depth,
             }, material);
         }
     }
