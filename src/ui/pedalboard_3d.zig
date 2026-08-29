@@ -79,20 +79,45 @@ const millimetres_to_world: f32 = 0.005;
 const legacy_pedal_scale: f32 = 0.022;
 const pedal_detail_scale: f32 = millimetres_to_world / legacy_pedal_scale;
 
-// Reference combo: 620 x 500 x 260 mm, resting on the 56 mm-high floor.
+const equipment_floor_top: f32 = 0.28;
+
+// Reference combo: 620 x 500 x 260 mm.
 const combo_center = [3]f32{ 0, 1.53, -4.28 };
 const combo_size = [3]f32{ 3.10, 2.50, 1.30 };
-const ComboPlacement = struct {
+
+// Bogner Shiva head (680 x 270 x 270 mm) over a wide 4x12 cabinet
+// (780 x 740 x 360 mm), separated by the cabinet feet.
+const bogner_head_size = [3]f32{ 3.40, 1.35, 1.35 };
+const bogner_cabinet_size = [3]f32{ 3.90, 3.70, 1.80 };
+const head_cabinet_gap: f32 = 0.10;
+const bogner_stack_size = [3]f32{
+    bogner_cabinet_size[0],
+    bogner_cabinet_size[1] + head_cabinet_gap + bogner_head_size[1],
+    bogner_cabinet_size[2],
+};
+
+pub const AmplifierFormat = enum {
+    combo,
+    head_and_4x12,
+};
+
+const AmplifierPlacement = struct {
     center: [3]f32,
     yaw_degrees: f32,
     id: AmplifierId,
+    format: AmplifierFormat,
 };
-const combo_placements = [_]ComboPlacement{
-    // The side combos move 110 mm toward the listener and toe inward to form
+const amplifier_placements = [_]AmplifierPlacement{
+    // The side amplifiers move toward the listener and toe inward to form
     // a shallow listening arc around the original amplifier.
-    .{ .center = .{ 3.25, 1.53, -3.73 }, .yaw_degrees = -12.0, .id = .bogner },
-    .{ .center = combo_center, .yaw_degrees = 0, .id = .dumble },
-    .{ .center = .{ -3.25, 1.53, -3.73 }, .yaw_degrees = 12.0, .id = .mesa },
+    .{
+        .center = .{ 3.85, equipment_floor_top + bogner_stack_size[1] * 0.5, -3.73 },
+        .yaw_degrees = -12.0,
+        .id = .bogner,
+        .format = .head_and_4x12,
+    },
+    .{ .center = combo_center, .yaw_degrees = 0, .id = .dumble, .format = .combo },
+    .{ .center = .{ -3.25, 1.53, -3.73 }, .yaw_degrees = 12.0, .id = .mesa, .format = .combo },
 };
 const equipment_offset_x: f32 = -14.52;
 // 65 mm clear space leaves opposing side jacks readable without scattering the
@@ -205,8 +230,8 @@ pub fn build(mesh: *Mesh, rig: *const demo.Rig, state: BuildState) !void {
     try addStudioRoom(mesh);
     const equipment_vertex_start = mesh.len;
     const equipment_light_start = mesh.emissive_light_len;
-    for (combo_placements) |placement| {
-        try addComboAmplifier(mesh, placement, placement.id == state.active_amplifier);
+    for (amplifier_placements) |placement| {
+        try addAmplifier(mesh, placement, placement.id == state.active_amplifier);
     }
 
     for (rig.pedals, 0..) |pedal, index| {
@@ -237,18 +262,38 @@ fn equipmentDirection(direction: [3]f32) [3]f32 {
     return .{ direction[2], direction[1], -direction[0] };
 }
 
-fn comboPlacement(id: AmplifierId) ComboPlacement {
-    return combo_placements[@intFromEnum(id)];
+fn amplifierPlacement(id: AmplifierId) AmplifierPlacement {
+    return amplifier_placements[@intFromEnum(id)];
+}
+
+fn amplifierSize(placement: AmplifierPlacement) [3]f32 {
+    return switch (placement.format) {
+        .combo => combo_size,
+        .head_and_4x12 => bogner_stack_size,
+    };
 }
 
 pub fn amplifierCamera(id: AmplifierId) CameraPose {
-    const placement = comboPlacement(id);
+    const placement = amplifierPlacement(id);
+    const size = amplifierSize(placement);
     const center = equipmentPoint(placement.center);
     const front = equipmentDirection(rotateDirectionY(.{ 0, 0, 1 }, placement.yaw_degrees));
+    const distance = switch (placement.format) {
+        .combo => 4.35,
+        .head_and_4x12 => size[1] * 1.45,
+    };
+    const camera_y = switch (placement.format) {
+        .combo => 2.70,
+        .head_and_4x12 => center[1] + 0.32,
+    };
+    const target_y = switch (placement.format) {
+        .combo => 1.35,
+        .head_and_4x12 => center[1],
+    };
     return .{
-        .camera = .{ center[0] + front[0] * 4.35, 2.70, center[2] + front[2] * 4.35 },
-        .target = .{ center[0], 1.35, center[2] },
-        .field_of_view_degrees = 50.0,
+        .camera = .{ center[0] + front[0] * distance, camera_y, center[2] + front[2] * distance },
+        .target = .{ center[0], target_y, center[2] },
+        .field_of_view_degrees = if (placement.format == .combo) 50.0 else 44.0,
     };
 }
 
@@ -363,7 +408,7 @@ pub fn amplifierAt(point: [2]f32, window_aspect: f32) ?AmplifierId {
     const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
     var result: ?AmplifierId = null;
     var nearest_distance_squared = std.math.inf(f32);
-    for (combo_placements) |placement| {
+    for (amplifier_placements) |placement| {
         if (!hitTestAmplifierPlacement(point, viewport_aspect, rig_camera, placement)) continue;
         const projected = projectToWindow(equipmentPoint(placement.center), rig_camera, viewport_aspect) orelse continue;
         const dx = point[0] - projected[0];
@@ -383,14 +428,17 @@ pub fn hitTestAmplifier(point: [2]f32, window_aspect: f32) bool {
 
 pub fn hitTestFocusedAmplifier(point: [2]f32, window_aspect: f32, id: AmplifierId) bool {
     const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
-    return hitTestAmplifierPlacement(point, viewport_aspect, amplifierCamera(id), comboPlacement(id));
+    return hitTestAmplifierPlacement(point, viewport_aspect, amplifierCamera(id), amplifierPlacement(id));
 }
 
 pub fn hitTestAmplifierPower(point: [2]f32, window_aspect: f32, id: AmplifierId) bool {
-    const placement = comboPlacement(id);
+    const placement = amplifierPlacement(id);
     const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
     const camera = amplifierCamera(id);
-    const scale_y = combo_size[1] / 3.0;
+    const scale_y = switch (placement.format) {
+        .combo => combo_size[1] / 3.0,
+        .head_and_4x12 => bogner_head_size[1] / 1.35,
+    };
     const canonical_center = amplifierPowerCanonicalCenter(placement);
     const x_offset = rotateDirectionY(.{ 0.16, 0, 0 }, placement.yaw_degrees);
     const canonical_x_edge = [3]f32{
@@ -408,27 +456,37 @@ pub fn hitTestAmplifierPower(point: [2]f32, window_aspect: f32, id: AmplifierId)
         @abs(point[1] - center[1]) <= half_height + padding;
 }
 
-fn amplifierPowerCanonicalCenter(placement: ComboPlacement) [3]f32 {
-    const scale_x = combo_size[0] / 5.15;
-    const scale_y = combo_size[1] / 3.0;
-    const scale_z = combo_size[2] / 1.34;
-    const floor_top: f32 = 0.28;
-    const front_z = placement.center[2] + combo_size[2] * 0.5;
-    const panel_y = floor_top + combo_size[1] - 0.34 * scale_y;
-    return rotatePointY(
-        .{ placement.center[0] - 1.82 * scale_x, panel_y, front_z + 0.150 * scale_z },
-        placement.center,
-        placement.yaw_degrees,
-    );
+fn amplifierPowerCanonicalCenter(placement: AmplifierPlacement) [3]f32 {
+    const canonical_center = switch (placement.format) {
+        .combo => blk: {
+            const scale_x = combo_size[0] / 5.15;
+            const scale_y = combo_size[1] / 3.0;
+            const scale_z = combo_size[2] / 1.34;
+            const front_z = placement.center[2] + combo_size[2] * 0.5;
+            const panel_y = equipment_floor_top + combo_size[1] - 0.34 * scale_y;
+            break :blk [3]f32{ placement.center[0] - 1.82 * scale_x, panel_y, front_z + 0.150 * scale_z };
+        },
+        .head_and_4x12 => blk: {
+            const head_center_y = equipment_floor_top + bogner_cabinet_size[1] +
+                head_cabinet_gap + bogner_head_size[1] * 0.5;
+            break :blk [3]f32{
+                placement.center[0] - bogner_head_size[0] * 0.40,
+                head_center_y,
+                placement.center[2] + bogner_head_size[2] * 0.5 + 0.075,
+            };
+        },
+    };
+    return rotatePointY(canonical_center, placement.center, placement.yaw_degrees);
 }
 
 fn hitTestAmplifierPlacement(
     point: [2]f32,
     viewport_aspect: f32,
     camera: CameraPose,
-    placement: ComboPlacement,
+    placement: AmplifierPlacement,
 ) bool {
-    const half = [3]f32{ combo_size[0] * 0.5, combo_size[1] * 0.5, combo_size[2] * 0.5 };
+    const size = amplifierSize(placement);
+    const half = [3]f32{ size[0] * 0.5, size[1] * 0.5, size[2] * 0.5 };
     var minimum = [2]f32{ std.math.inf(f32), std.math.inf(f32) };
     var maximum = [2]f32{ -std.math.inf(f32), -std.math.inf(f32) };
     for (0..8) |index| {
@@ -872,8 +930,15 @@ fn amplifierPalette(style: AmplifierId) AmplifierPalette {
     };
 }
 
-fn addComboAmplifier(mesh: *Mesh, placement: ComboPlacement, powered: bool) !void {
-    const floor_top: f32 = 0.28;
+fn addAmplifier(mesh: *Mesh, placement: AmplifierPlacement, powered: bool) !void {
+    switch (placement.format) {
+        .combo => try addComboAmplifier(mesh, placement, powered),
+        .head_and_4x12 => try addHeadAndCabinetAmplifier(mesh, placement, powered),
+    }
+}
+
+fn addComboAmplifier(mesh: *Mesh, placement: AmplifierPlacement, powered: bool) !void {
+    const floor_top = equipment_floor_top;
     const center = placement.center;
     const size = combo_size;
     const palette = amplifierPalette(placement.id);
@@ -936,6 +1001,109 @@ fn addComboAmplifier(mesh: *Mesh, placement: ComboPlacement, powered: bool) !voi
 
     try addBox(mesh, .{ center[0] - size[0] * 0.34, floor_top - 0.035, center[2] }, .{ 0.46 * scale_x, 0.21 * scale_y, 0.62 * scale_z }, materials.rubber);
     try addBox(mesh, .{ center[0] + size[0] * 0.34, floor_top - 0.035, center[2] }, .{ 0.46 * scale_x, 0.21 * scale_y, 0.62 * scale_z }, materials.rubber);
+
+    rotateMeshRangeY(mesh, vertex_start, center, placement.yaw_degrees);
+}
+
+fn addHeadAndCabinetAmplifier(mesh: *Mesh, placement: AmplifierPlacement, powered: bool) !void {
+    const center = placement.center;
+    const palette = amplifierPalette(placement.id);
+    const vertex_start = mesh.len;
+
+    // A cabinet is a semantic speaker grid rather than a stretched combo. The
+    // same two-by-two layout can later expose four individual speaker targets.
+    const cabinet_center = [3]f32{
+        center[0],
+        equipment_floor_top + bogner_cabinet_size[1] * 0.5,
+        center[2],
+    };
+    const cabinet_front_z = center[2] + bogner_cabinet_size[2] * 0.5;
+    try addBeveledBox(mesh, cabinet_center, bogner_cabinet_size, 0.20, palette.vinyl);
+
+    const grille_size = [3]f32{
+        bogner_cabinet_size[0] - 0.34,
+        bogner_cabinet_size[1] - 0.38,
+        0.075,
+    };
+    const grille_center = [3]f32{
+        center[0],
+        cabinet_center[1] - 0.02,
+        cabinet_front_z + 0.055,
+    };
+    try addBox(mesh, grille_center, grille_size, palette.grille);
+
+    const speaker_radius: f32 = 0.69;
+    const speaker_x_offset: f32 = 0.91;
+    const speaker_y_offset: f32 = 0.82;
+    for (0..2) |row| {
+        for (0..2) |column| {
+            const speaker_center = [3]f32{
+                center[0] + (if (column == 0) -speaker_x_offset else speaker_x_offset),
+                grille_center[1] + (if (row == 0) speaker_y_offset else -speaker_y_offset),
+                cabinet_front_z + 0.095,
+            };
+            try addCylinder(mesh, speaker_center, speaker_radius, 0.045, materials.rubber, .z);
+            try addCylinder(mesh, .{ speaker_center[0], speaker_center[1], speaker_center[2] + 0.030 }, speaker_radius * 0.34, 0.035, materials.black_metal, .z);
+        }
+    }
+
+    const grille_left = center[0] - grille_size[0] * 0.5;
+    const grille_bottom = grille_center[1] - grille_size[1] * 0.5;
+    for (0..22) |index| {
+        const x = grille_left + (@as(f32, @floatFromInt(index)) + 0.5) * grille_size[0] / 22.0;
+        try addBox(mesh, .{ x, grille_center[1], cabinet_front_z + 0.135 }, .{ 0.014, grille_size[1], 0.016 }, palette.grille_thread);
+    }
+    for (0..20) |index| {
+        const y = grille_bottom + (@as(f32, @floatFromInt(index)) + 0.5) * grille_size[1] / 20.0;
+        try addBox(mesh, .{ center[0], y, cabinet_front_z + 0.140 }, .{ grille_size[0], 0.012, 0.014 }, palette.grille_thread);
+    }
+
+    const piping_z = cabinet_front_z + 0.155;
+    try addBox(mesh, .{ center[0], grille_center[1] + grille_size[1] * 0.5, piping_z }, .{ grille_size[0] + 0.10, 0.045, 0.030 }, palette.piping);
+    try addBox(mesh, .{ center[0], grille_center[1] - grille_size[1] * 0.5, piping_z }, .{ grille_size[0] + 0.10, 0.045, 0.030 }, palette.piping);
+    try addBox(mesh, .{ grille_left, grille_center[1], piping_z }, .{ 0.045, grille_size[1], 0.030 }, palette.piping);
+    try addBox(mesh, .{ center[0] + grille_size[0] * 0.5, grille_center[1], piping_z }, .{ 0.045, grille_size[1], 0.030 }, palette.piping);
+    try addBox(mesh, .{ center[0] - 1.17, grille_center[1] + 1.29, piping_z + 0.025 }, .{ 0.72, 0.17, 0.045 }, palette.badge);
+
+    // Rubber cabinet feet and the small air gap make the head visibly separate
+    // from the 4x12 instead of reading as one oversized enclosure.
+    try addBox(mesh, .{ center[0] - 1.30, equipment_floor_top - 0.035, center[2] }, .{ 0.42, 0.20, 0.72 }, materials.rubber);
+    try addBox(mesh, .{ center[0] + 1.30, equipment_floor_top - 0.035, center[2] }, .{ 0.42, 0.20, 0.72 }, materials.rubber);
+
+    const cabinet_top = equipment_floor_top + bogner_cabinet_size[1];
+    const head_center = [3]f32{
+        center[0],
+        cabinet_top + head_cabinet_gap + bogner_head_size[1] * 0.5,
+        center[2],
+    };
+    try addBox(mesh, .{ center[0] - 1.22, cabinet_top + head_cabinet_gap * 0.5, center[2] }, .{ 0.32, head_cabinet_gap, 0.55 }, materials.rubber);
+    try addBox(mesh, .{ center[0] + 1.22, cabinet_top + head_cabinet_gap * 0.5, center[2] }, .{ 0.32, head_cabinet_gap, 0.55 }, materials.rubber);
+    try addBeveledBox(mesh, head_center, bogner_head_size, 0.15, palette.vinyl);
+
+    const head_front_z = center[2] + bogner_head_size[2] * 0.5;
+    const panel_size = [3]f32{ bogner_head_size[0] - 0.30, 0.50, 0.09 };
+    try addBox(mesh, .{ center[0], head_center[1], head_front_z + 0.060 }, panel_size, palette.panel);
+    try addBox(mesh, .{ center[0], head_center[1] + 0.39, head_front_z + 0.045 }, .{ panel_size[0], 0.20, 0.075 }, palette.grille);
+
+    const power_material = if (powered)
+        Material{ .base_color = .{ 0.95, 0.26, 0.035 }, .roughness = 0.18, .metallic = 0.18, .emissive = 2.8 }
+    else
+        materials.black_metal;
+    try addBox(mesh, .{ center[0] - bogner_head_size[0] * 0.40, head_center[1], head_front_z + 0.075 }, .{ 0.15, 0.28, 0.055 }, power_material);
+
+    for (0..7) |index| {
+        const x = center[0] - 1.00 + @as(f32, @floatFromInt(index)) * 0.32;
+        try addCylinder(mesh, .{ x, head_center[1], head_front_z + 0.105 }, 0.090, 0.085, materials.knob_plastic, .z);
+        try addBox(mesh, .{ x, head_center[1] + 0.058, head_front_z + 0.157 }, .{ 0.014, 0.050, 0.014 }, materials.knob_indicator);
+    }
+    try addCylinder(mesh, .{ center[0] + 1.37, head_center[1], head_front_z + 0.105 }, 0.105, 0.09, materials.chrome, .z);
+    try addCylinder(mesh, .{ center[0] + 1.37, head_center[1], head_front_z + 0.165 }, 0.057, 0.045, materials.rubber, .z);
+    try addBox(mesh, .{ center[0] - 1.00, head_center[1] + 0.39, head_front_z + 0.095 }, .{ 0.66, 0.12, 0.04 }, palette.badge);
+
+    const head_top = head_center[1] + bogner_head_size[1] * 0.5;
+    try addBox(mesh, .{ center[0] - 0.62, head_top + 0.07, center[2] }, .{ 0.14, 0.14, 0.34 }, materials.chrome);
+    try addBox(mesh, .{ center[0] + 0.62, head_top + 0.07, center[2] }, .{ 0.14, 0.14, 0.34 }, materials.chrome);
+    try addBeveledBox(mesh, .{ center[0], head_top + 0.18, center[2] }, .{ 1.34, 0.18, 0.29 }, 0.065, materials.rubber);
 
     rotateMeshRangeY(mesh, vertex_start, center, placement.yaw_degrees);
 }
@@ -1812,10 +1980,10 @@ test "open presentation remains available outside the default rig" {
     try std.testing.expect(mesh.len > 35_000);
 }
 
-test "combo amplifier projects to a clickable rig-view region" {
+test "each amplifier format projects to a clickable rig-view region" {
     const window_aspect = 1200.0 / 760.0;
     const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
-    for (combo_placements) |placement| {
+    for (amplifier_placements) |placement| {
         const projected_center = projectToWindow(equipmentPoint(placement.center), rig_camera, viewport_aspect) orelse return error.ComboBehindCamera;
         try std.testing.expectEqual(placement.id, amplifierAt(projected_center, window_aspect).?);
     }
@@ -1829,6 +1997,9 @@ test "studio equipment shares a physical world scale" {
     try std.testing.expectApproxEqAbs(@as(f32, 0.610), single_depth, 0.0001);
     try std.testing.expectApproxEqAbs(@as(f32, 620.0 / 70.0), combo_size[0] / single_width, 0.001);
     try std.testing.expectApproxEqAbs(@as(f32, 500.0 / 55.0), combo_size[1] / (demo.rig.pedals[0].enclosure.dimensions.height * millimetres_to_world), 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 780.0), bogner_cabinet_size[0] / millimetres_to_world, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 740.0), bogner_cabinet_size[1] / millimetres_to_world, 0.001);
+    try std.testing.expectEqual(AmplifierFormat.head_and_4x12, amplifierPlacement(.bogner).format);
 }
 
 test "studio rug selects the generated base-color texture slot" {
@@ -1849,7 +2020,7 @@ test "focused combo remains clickable for direct return navigation" {
 test "each focused amplifier exposes its own power switch hit target" {
     const window_aspect = 1200.0 / 760.0;
     const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
-    for (combo_placements) |placement| {
+    for (amplifier_placements) |placement| {
         const projected = projectToWindow(
             equipmentPoint(amplifierPowerCanonicalCenter(placement)),
             amplifierCamera(placement.id),
