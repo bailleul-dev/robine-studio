@@ -25,9 +25,11 @@ const Layer = struct {
     mixin_weights: [max_channels]f32 = .{0.0} ** max_channels,
     residual_weights: [max_channels * max_channels]f32 = .{0.0} ** (max_channels * max_channels),
     residual_bias: [max_channels]f32 = .{0.0} ** max_channels,
+    cached_prewarm_state: [max_channels]f32 = .{0.0} ** max_channels,
     history: []f32 = &.{},
     ring_size: usize = 0,
     ring_mask: usize = 0,
+    initial_write_index: usize = 0,
     write_index: usize = 0,
 };
 
@@ -42,9 +44,12 @@ pub const Model = struct {
     head_weights: [head_kernel_size * max_channels]f32 = .{0.0} ** (head_kernel_size * max_channels),
     head_bias: f32 = 0.0,
     head_scale: f32 = 1.0,
+    cached_head_prewarm_state: [max_channels]f32 = .{0.0} ** max_channels,
+    has_cached_prewarm_state: bool = false,
     head_history: []f32 = &.{},
     head_ring_size: usize = 0,
     head_ring_mask: usize = 0,
+    head_initial_write_index: usize = 0,
     head_write_index: usize = 0,
     scratch: []f32 = &.{},
     silence: []f32 = &.{},
@@ -128,7 +133,7 @@ pub const Model = struct {
         if (maximum_frames == 0) return error.InvalidA2BlockSize;
         if (maximum_frames <= self.block_capacity) return;
 
-        for (self.layers) |*layer| {
+        for (self.layers, 0..) |*layer, layer_index| {
             const ring_size = nextPowerOfTwo(layer.max_lookback + maximum_frames);
             const history = try self.allocator.alloc(f32, (ring_size + maximum_frames) * self.channels);
             @memset(history, 0.0);
@@ -136,7 +141,8 @@ pub const Model = struct {
             layer.history = history;
             layer.ring_size = ring_size;
             layer.ring_mask = ring_size - 1;
-            layer.write_index = layer.max_lookback;
+            layer.initial_write_index = (layer_index * ring_size / layer_count) & (ring_size - 1);
+            layer.write_index = layer.initial_write_index;
         }
 
         const head_ring_size = nextPowerOfTwo(head_kernel_size - 1 + maximum_frames);
@@ -149,7 +155,8 @@ pub const Model = struct {
         self.head_history = head_history;
         self.head_ring_size = head_ring_size;
         self.head_ring_mask = head_ring_size - 1;
-        self.head_write_index = head_kernel_size - 1;
+        self.head_initial_write_index = head_ring_size / 2;
+        self.head_write_index = self.head_initial_write_index;
 
         const scratch = try self.allocator.alloc(f32, maximum_frames * self.channels * 2);
         if (self.scratch.len != 0) self.allocator.free(self.scratch);
@@ -162,15 +169,20 @@ pub const Model = struct {
         if (self.discard.len != 0) self.allocator.free(self.discard);
         self.discard = discard;
         self.block_capacity = maximum_frames;
+        self.has_cached_prewarm_state = false;
     }
 
     pub fn reset(self: *Model) void {
+        if (self.has_cached_prewarm_state) {
+            self.restorePrewarmCache();
+            return;
+        }
         for (self.layers) |*layer| {
             @memset(layer.history, 0.0);
-            layer.write_index = layer.max_lookback;
+            layer.write_index = layer.initial_write_index;
         }
         @memset(self.head_history, 0.0);
-        self.head_write_index = head_kernel_size - 1;
+        self.head_write_index = self.head_initial_write_index;
     }
 
     pub fn prewarm(self: *Model) void {
@@ -181,6 +193,7 @@ pub const Model = struct {
             self.processBlock(self.silence[0..frames], self.discard[0..frames]);
             remaining -= frames;
         }
+        self.cachePrewarmState();
     }
 
     pub fn processBlock(self: *Model, input: []const f32, output: []f32) void {
@@ -194,6 +207,10 @@ pub const Model = struct {
     }
 
     fn processChannels(self: *Model, comptime channels: usize, input: []const f32, output: []f32) void {
+        if (channels == 3) {
+            self.processLite(input, output);
+            return;
+        }
         const frames = input.len;
         const plane_size = frames * channels;
         const current = self.scratch[0..plane_size];
@@ -211,9 +228,36 @@ pub const Model = struct {
 
         for (self.layers) |*layer| {
             ringWrite(channels, layer, current, frames, self.block_capacity);
-            layerForwardFull(channels, layer, input, current, head_sum, frames);
+            switch (layer.kernel_size) {
+                6 => layerForwardFull(8, 6, layer, input, current, head_sum, frames),
+                15 => layerForwardFull(8, 15, layer, input, current, head_sum, frames),
+                else => unreachable,
+            }
         }
         self.headForwardFull(channels, head_sum, output, frames);
+    }
+
+    fn processLite(self: *Model, input: []const f32, output: []f32) void {
+        const frames = input.len;
+        const plane_size = frames * 3;
+        const current = self.scratch[0..plane_size];
+        const head_sum = self.scratch[plane_size..][0..plane_size];
+        inline for (0..3) |channel| {
+            const destination = current[channel * frames ..][0..frames];
+            const weight = self.rechannel_weights[channel];
+            for (destination, input) |*sample, source| sample.* = weight * source;
+        }
+        @memset(head_sum, 0.0);
+
+        for (self.layers) |*layer| {
+            ringWritePlanar3(layer, current, frames, self.block_capacity);
+            switch (layer.kernel_size) {
+                6 => layerForwardLitePlanar(6, layer, input, current, head_sum, frames, self.block_capacity),
+                15 => layerForwardLitePlanar(15, layer, input, current, head_sum, frames, self.block_capacity),
+                else => unreachable,
+            }
+        }
+        self.headForwardLitePlanar(head_sum, output, frames);
     }
 
     fn headForwardFull(
@@ -294,15 +338,124 @@ pub const Model = struct {
         }
     }
 
+    fn headForwardLitePlanar(self: *Model, head_sum: []const f32, output: []f32, frames: usize) void {
+        ringWritePlanarRaw3(
+            self.head_history,
+            self.head_ring_size,
+            self.head_ring_mask,
+            &self.head_write_index,
+            head_sum,
+            frames,
+            self.block_capacity,
+        );
+        const Vec8 = @Vector(8, f32);
+        const history_stride = self.head_ring_size + self.block_capacity;
+        var frame: usize = 0;
+        while (frame + 8 <= frames) : (frame += 8) {
+            var sum: Vec8 = @splat(self.head_bias);
+            inline for (0..head_kernel_size) |tap| {
+                const lookback = head_kernel_size - 1 - tap;
+                const base = self.head_write_index + self.head_ring_size - frames - lookback;
+                const history_frame = (base & self.head_ring_mask) + frame;
+                inline for (0..3) |channel| {
+                    sum = @mulAdd(
+                        Vec8,
+                        @as(Vec8, @splat(self.head_weights[tap * 3 + channel])),
+                        loadVector(8, self.head_history, channel * history_stride + history_frame),
+                        sum,
+                    );
+                }
+            }
+            storeVector(8, output, frame, sum * @as(Vec8, @splat(self.head_scale)));
+        }
+        while (frame < frames) : (frame += 1) {
+            var sum = self.head_bias;
+            inline for (0..head_kernel_size) |tap| {
+                const lookback = head_kernel_size - 1 - tap;
+                const base = self.head_write_index + self.head_ring_size - frames - lookback;
+                const history_frame = (base & self.head_ring_mask) + frame;
+                inline for (0..3) |channel| {
+                    sum += self.head_weights[tap * 3 + channel] *
+                        self.head_history[channel * history_stride + history_frame];
+                }
+            }
+            output[frame] = sum * self.head_scale;
+        }
+    }
+
     fn prewarmFrames(self: Model) usize {
         var result: usize = 1;
         for (self.layers) |layer| result += layer.max_lookback;
         return result + head_kernel_size - 1;
     }
+
+    fn cachePrewarmState(self: *Model) void {
+        for (self.layers) |*layer| {
+            const last_frame = (layer.write_index + layer.ring_size - 1) & layer.ring_mask;
+            if (self.channels == 3) {
+                const stride = layer.ring_size + self.block_capacity;
+                inline for (0..3) |channel| {
+                    layer.cached_prewarm_state[channel] = layer.history[channel * stride + last_frame];
+                }
+            } else {
+                const state = loadVector(8, layer.history, last_frame * 8);
+                layer.cached_prewarm_state[0..8].* = @bitCast(state);
+            }
+        }
+        const last_head_frame = (self.head_write_index + self.head_ring_size - 1) & self.head_ring_mask;
+        if (self.channels == 3) {
+            const stride = self.head_ring_size + self.block_capacity;
+            inline for (0..3) |channel| {
+                self.cached_head_prewarm_state[channel] = self.head_history[channel * stride + last_head_frame];
+            }
+        } else {
+            const state = loadVector(8, self.head_history, last_head_frame * 8);
+            self.cached_head_prewarm_state[0..8].* = @bitCast(state);
+        }
+        self.has_cached_prewarm_state = true;
+    }
+
+    fn restorePrewarmCache(self: *Model) void {
+        for (self.layers) |*layer| {
+            if (self.channels == 3) {
+                const stride = layer.ring_size + self.block_capacity;
+                inline for (0..3) |channel| {
+                    @memset(
+                        layer.history[channel * stride ..][0..stride],
+                        layer.cached_prewarm_state[channel],
+                    );
+                }
+            } else {
+                const state: @Vector(8, f32) = @bitCast(layer.cached_prewarm_state[0..8].*);
+                var frame: usize = 0;
+                while (frame < layer.history.len / 8) : (frame += 1) {
+                    storeVector(8, layer.history, frame * 8, state);
+                }
+            }
+            layer.write_index = layer.initial_write_index;
+        }
+        if (self.channels == 3) {
+            const stride = self.head_ring_size + self.block_capacity;
+            inline for (0..3) |channel| {
+                @memset(
+                    self.head_history[channel * stride ..][0..stride],
+                    self.cached_head_prewarm_state[channel],
+                );
+            }
+        } else {
+            const state: @Vector(8, f32) = @bitCast(self.cached_head_prewarm_state[0..8].*);
+            var frame: usize = 0;
+            while (frame < self.head_history.len / 8) : (frame += 1) {
+                storeVector(8, self.head_history, frame * 8, state);
+            }
+        }
+        self.head_write_index = self.head_initial_write_index;
+    }
 };
 
 fn layerForwardFull(
     comptime channels: usize,
+    comptime kernel_size: usize,
     layer: *Layer,
     input: []const f32,
     current: []f32,
@@ -322,8 +475,8 @@ fn layerForwardFull(
         var a1 = conv_bias;
         var a2 = conv_bias;
         var a3 = conv_bias;
-        for (0..layer.kernel_size) |tap| {
-            const lookback = (layer.kernel_size - 1 - tap) * layer.dilation;
+        inline for (0..kernel_size) |tap| {
+            const lookback = (kernel_size - 1 - tap) * layer.dilation;
             const base = layer.write_index + layer.ring_size - frames - lookback;
             const history_frame = base & layer.ring_mask;
             for (0..channels) |in_channel| {
@@ -374,8 +527,8 @@ fn layerForwardFull(
 
     while (frame < frames) : (frame += 1) {
         var activation = conv_bias;
-        for (0..layer.kernel_size) |tap| {
-            const lookback = (layer.kernel_size - 1 - tap) * layer.dilation;
+        inline for (0..kernel_size) |tap| {
+            const lookback = (kernel_size - 1 - tap) * layer.dilation;
             const base = layer.write_index + layer.ring_size - frames - lookback;
             const history_frame = (base & layer.ring_mask) + frame;
             for (0..channels) |in_channel| {
@@ -507,6 +660,102 @@ fn layerForwardLite(
     }
 }
 
+fn layerForwardLitePlanar(
+    comptime kernel_size: usize,
+    layer: *Layer,
+    input: []const f32,
+    current: []f32,
+    head_sum: []f32,
+    frames: usize,
+    maximum_frames: usize,
+) void {
+    const Vec8 = @Vector(8, f32);
+    const zero: Vec8 = @splat(0.0);
+    const slope: Vec8 = @splat(leaky_slope);
+    const history_stride = layer.ring_size + maximum_frames;
+    var frame: usize = 0;
+    while (frame + 8 <= frames) : (frame += 8) {
+        var a0: Vec8 = @splat(layer.conv_bias[0]);
+        var a1: Vec8 = @splat(layer.conv_bias[1]);
+        var a2: Vec8 = @splat(layer.conv_bias[2]);
+        inline for (0..kernel_size) |tap| {
+            const lookback = (kernel_size - 1 - tap) * layer.dilation;
+            const base = layer.write_index + layer.ring_size - frames - lookback;
+            const history_frame = (base & layer.ring_mask) + frame;
+            inline for (0..3) |in_channel| {
+                const source = loadVector(
+                    8,
+                    layer.history,
+                    in_channel * history_stride + history_frame,
+                );
+                const weight_offset = tap * 9 + in_channel * 3;
+                a0 = @mulAdd(Vec8, @as(Vec8, @splat(layer.conv_weights[weight_offset])), source, a0);
+                a1 = @mulAdd(Vec8, @as(Vec8, @splat(layer.conv_weights[weight_offset + 1])), source, a1);
+                a2 = @mulAdd(Vec8, @as(Vec8, @splat(layer.conv_weights[weight_offset + 2])), source, a2);
+            }
+        }
+        const condition = loadVector(8, input, frame);
+        a0 = @mulAdd(Vec8, @as(Vec8, @splat(layer.mixin_weights[0])), condition, a0);
+        a1 = @mulAdd(Vec8, @as(Vec8, @splat(layer.mixin_weights[1])), condition, a1);
+        a2 = @mulAdd(Vec8, @as(Vec8, @splat(layer.mixin_weights[2])), condition, a2);
+        a0 = @select(f32, a0 < zero, a0 * slope, a0);
+        a1 = @select(f32, a1 < zero, a1 * slope, a1);
+        a2 = @select(f32, a2 < zero, a2 * slope, a2);
+
+        storeVector(8, head_sum, frame, loadVector(8, head_sum, frame) + a0);
+        storeVector(8, head_sum, frames + frame, loadVector(8, head_sum, frames + frame) + a1);
+        storeVector(8, head_sum, frames * 2 + frame, loadVector(8, head_sum, frames * 2 + frame) + a2);
+
+        var r0: Vec8 = @splat(layer.residual_bias[0]);
+        var r1: Vec8 = @splat(layer.residual_bias[1]);
+        var r2: Vec8 = @splat(layer.residual_bias[2]);
+        r0 = @mulAdd(Vec8, @as(Vec8, @splat(layer.residual_weights[0])), a0, r0);
+        r1 = @mulAdd(Vec8, @as(Vec8, @splat(layer.residual_weights[1])), a0, r1);
+        r2 = @mulAdd(Vec8, @as(Vec8, @splat(layer.residual_weights[2])), a0, r2);
+        r0 = @mulAdd(Vec8, @as(Vec8, @splat(layer.residual_weights[3])), a1, r0);
+        r1 = @mulAdd(Vec8, @as(Vec8, @splat(layer.residual_weights[4])), a1, r1);
+        r2 = @mulAdd(Vec8, @as(Vec8, @splat(layer.residual_weights[5])), a1, r2);
+        r0 = @mulAdd(Vec8, @as(Vec8, @splat(layer.residual_weights[6])), a2, r0);
+        r1 = @mulAdd(Vec8, @as(Vec8, @splat(layer.residual_weights[7])), a2, r1);
+        r2 = @mulAdd(Vec8, @as(Vec8, @splat(layer.residual_weights[8])), a2, r2);
+        storeVector(8, current, frame, loadVector(8, current, frame) + r0);
+        storeVector(8, current, frames + frame, loadVector(8, current, frames + frame) + r1);
+        storeVector(8, current, frames * 2 + frame, loadVector(8, current, frames * 2 + frame) + r2);
+    }
+
+    while (frame < frames) : (frame += 1) {
+        var activation = [3]f32{
+            layer.conv_bias[0],
+            layer.conv_bias[1],
+            layer.conv_bias[2],
+        };
+        inline for (0..kernel_size) |tap| {
+            const lookback = (kernel_size - 1 - tap) * layer.dilation;
+            const base = layer.write_index + layer.ring_size - frames - lookback;
+            const history_frame = (base & layer.ring_mask) + frame;
+            inline for (0..3) |in_channel| {
+                const source = layer.history[in_channel * history_stride + history_frame];
+                const weight_offset = tap * 9 + in_channel * 3;
+                activation[0] += layer.conv_weights[weight_offset] * source;
+                activation[1] += layer.conv_weights[weight_offset + 1] * source;
+                activation[2] += layer.conv_weights[weight_offset + 2] * source;
+            }
+        }
+        inline for (0..3) |channel| {
+            activation[channel] += layer.mixin_weights[channel] * input[frame];
+            if (activation[channel] < 0.0) activation[channel] *= leaky_slope;
+            head_sum[channel * frames + frame] += activation[channel];
+        }
+        inline for (0..3) |out_channel| {
+            var residual = layer.residual_bias[out_channel];
+            inline for (0..3) |in_channel| {
+                residual += layer.residual_weights[in_channel * 3 + out_channel] * activation[in_channel];
+            }
+            current[out_channel * frames + frame] += residual;
+        }
+    }
+}
+
 fn ringWrite(
     comptime channels: usize,
     layer: *Layer,
@@ -524,6 +773,59 @@ fn ringWrite(
         frames,
         maximum_frames,
     );
+}
+
+fn ringWritePlanar3(
+    layer: *Layer,
+    source: []const f32,
+    frames: usize,
+    maximum_frames: usize,
+) void {
+    ringWritePlanarRaw3(
+        layer.history,
+        layer.ring_size,
+        layer.ring_mask,
+        &layer.write_index,
+        source,
+        frames,
+        maximum_frames,
+    );
+}
+
+fn ringWritePlanarRaw3(
+    history: []f32,
+    ring_size: usize,
+    ring_mask: usize,
+    write_index: *usize,
+    source: []const f32,
+    frames: usize,
+    maximum_frames: usize,
+) void {
+    const first_frames = @min(frames, ring_size - write_index.*);
+    const history_stride = ring_size + maximum_frames;
+    inline for (0..3) |channel| {
+        const history_channel = history[channel * history_stride ..][0..history_stride];
+        const source_channel = source[channel * frames ..][0..frames];
+        @memcpy(history_channel[write_index.*..][0..first_frames], source_channel[0..first_frames]);
+        if (first_frames < frames) {
+            @memcpy(history_channel[0 .. frames - first_frames], source_channel[first_frames..frames]);
+        }
+        if (write_index.* < maximum_frames) {
+            const mirror_frames = @min(first_frames, maximum_frames - write_index.*);
+            @memcpy(
+                history_channel[ring_size + write_index.* ..][0..mirror_frames],
+                source_channel[0..mirror_frames],
+            );
+        }
+        if (first_frames < frames) {
+            const wrapped_frames = frames - first_frames;
+            @memcpy(
+                history_channel[ring_size..][0..wrapped_frames],
+                source_channel[first_frames..frames],
+            );
+        }
+    }
+    write_index.* = (write_index.* + frames) & ring_mask;
 }
 
 fn ringWriteRaw(
@@ -547,10 +849,20 @@ fn ringWriteRaw(
             source[first_frames * channels .. frames * channels],
         );
     }
-    @memcpy(
-        history[ring_size * channels ..][0 .. maximum_frames * channels],
-        history[0 .. maximum_frames * channels],
-    );
+    if (write_index.* < maximum_frames) {
+        const mirror_frames = @min(first_frames, maximum_frames - write_index.*);
+        @memcpy(
+            history[(ring_size + write_index.*) * channels ..][0 .. mirror_frames * channels],
+            source[0 .. mirror_frames * channels],
+        );
+    }
+    if (first_frames < frames) {
+        const wrapped_frames = frames - first_frames;
+        @memcpy(
+            history[ring_size * channels ..][0 .. wrapped_frames * channels],
+            source[first_frames * channels .. frames * channels],
+        );
+    }
     write_index.* = (write_index.* + frames) & ring_mask;
 }
 

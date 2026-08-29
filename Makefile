@@ -4,7 +4,7 @@ TEST_OPTIMIZE ?= ReleaseSafe
 
 .DEFAULT_GOAL := release
 
-.PHONY: release run-release test audio-probe nam-bench
+.PHONY: release run-release test audio-probe nam-bench a2-bench
 
 release:
 	$(ZIG) build -Doptimize=$(OPTIMIZE)
@@ -20,3 +20,6 @@ audio-probe:
 
 nam-bench:
 	$(ZIG) build nam-bench -Doptimize=$(OPTIMIZE)
+
+a2-bench:
+	$(ZIG) build a2-bench -Doptimize=$(OPTIMIZE)

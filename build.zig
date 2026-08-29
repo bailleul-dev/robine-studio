@@ -100,6 +100,21 @@ pub fn build(b: *std.Build) void {
     const nam_bench_step = b.step("nam-bench", "Benchmark full-quality NAM fixture rendering");
     nam_bench_step.dependOn(&run_nam_bench.step);
 
+    const a2_bench_module = b.createModule(.{
+        .root_source_file = b.path("src/hosts/a2_bench/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    a2_bench_module.addImport("robine", robine);
+    a2_bench_module.addImport("audio_assets", audio_assets);
+    const a2_bench = b.addExecutable(.{
+        .name = "robine-a2-bench",
+        .root_module = a2_bench_module,
+    });
+    const run_a2_bench = b.addRunArtifact(a2_bench);
+    const a2_bench_step = b.step("a2-bench", "Benchmark specialized A2-Lite and A2-Full kernels");
+    a2_bench_step.dependOn(&run_a2_bench.step);
+
     const install_app_binary = b.addInstallFileWithDir(
         studio.getEmittedBin(),
         .{ .custom = "Robine Studio.app/Contents/MacOS" },

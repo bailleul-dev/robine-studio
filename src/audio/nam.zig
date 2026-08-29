@@ -622,6 +622,64 @@ test "block WaveNet evaluation matches sample evaluation" {
     }
 }
 
+test "specialized A2 path matches generic WaveNet across variable blocks" {
+    const wav = @import("wav.zig");
+    const allocator = std.testing.allocator;
+    const model_bytes = try std.Io.Dir.cwd().readFileAlloc(
+        std.testing.io,
+        "resources/audio/models/nam/dumble-ods-102-ford-hyper-accuracy-plus/SLAMMIN_DUMBLE_FORD_CLN_MAIN_S.nam",
+        allocator,
+        .limited(2 * 1024 * 1024),
+    );
+    defer allocator.free(model_bytes);
+    const wav_bytes = try std.Io.Dir.cwd().readFileAlloc(
+        std.testing.io,
+        "resources/audio/fixtures/inputs/celestial-guitar-48k-mono.wav",
+        allocator,
+        .limited(8 * 1024 * 1024),
+    );
+    defer allocator.free(wav_bytes);
+    var source = try wav.decode(allocator, wav_bytes);
+    defer source.deinit(allocator);
+
+    for ([_]Model.Quality{ .lightweight, .full }) |quality| {
+        var reference = try Model.loadQuality(allocator, model_bytes, quality);
+        defer reference.deinit();
+        if (reference.a2) |*fast| fast.deinit();
+        reference.a2 = null;
+        var candidate = try Model.loadQuality(allocator, model_bytes, quality);
+        defer candidate.deinit();
+        try reference.prepareBlock(257);
+        try candidate.prepareBlock(257);
+        reference.prewarm(257);
+        candidate.prewarm(257);
+
+        var expected: [2048]f32 = undefined;
+        var actual: [2048]f32 = undefined;
+        const block_sizes = [_]usize{ 1, 7, 64, 127, 257, 31, 193 };
+        var offset: usize = 0;
+        var block_index: usize = 0;
+        while (offset < expected.len) : (block_index += 1) {
+            const frames = @min(block_sizes[block_index % block_sizes.len], expected.len - offset);
+            reference.processBlock(source.samples[offset..][0..frames], expected[offset..][0..frames]);
+            candidate.processBlock(source.samples[offset..][0..frames], actual[offset..][0..frames]);
+            offset += frames;
+        }
+        for (expected, actual) |generic, specialized| {
+            try std.testing.expectApproxEqAbs(generic, specialized, 0.00001);
+        }
+
+        reference.reset();
+        candidate.reset();
+        reference.prewarm(257);
+        reference.processBlock(source.samples[0..257], expected[0..257]);
+        candidate.processBlock(source.samples[0..257], actual[0..257]);
+        for (expected[0..257], actual[0..257]) |generic, specialized| {
+            try std.testing.expectApproxEqAbs(generic, specialized, 0.00001);
+        }
+    }
+}
+
 test "Dumble full model agrees with NAM Core reference samples" {
     const wav = @import("wav.zig");
     const allocator = std.testing.allocator;
