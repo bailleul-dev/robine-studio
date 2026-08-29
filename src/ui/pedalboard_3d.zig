@@ -52,8 +52,8 @@ pub const rig_camera = CameraPose{
 };
 
 pub const amplifier_camera = CameraPose{
-    .camera = .{ -14.45, 2.70, 0 },
-    .target = .{ -18.80, 1.35, 0 },
+    .camera = .{ -11.80, 3.40, 0 },
+    .target = .{ -18.40, 1.20, 0 },
     .field_of_view_degrees = 50.0,
 };
 
@@ -83,6 +83,19 @@ const pedal_detail_scale: f32 = millimetres_to_world / legacy_pedal_scale;
 // Reference combo: 620 x 500 x 260 mm, resting on the 56 mm-high floor.
 const combo_center = [3]f32{ 0, 1.53, -4.28 };
 const combo_size = [3]f32{ 3.10, 2.50, 1.30 };
+const AmplifierStyle = enum { dumble, bogner, mesa };
+const ComboPlacement = struct {
+    center: [3]f32,
+    yaw_degrees: f32,
+    style: AmplifierStyle,
+};
+const combo_placements = [_]ComboPlacement{
+    .{ .center = combo_center, .yaw_degrees = 0, .style = .dumble },
+    // The side combos move 110 mm toward the listener and toe inward to form
+    // a shallow listening arc around the original amplifier.
+    .{ .center = .{ 3.25, 1.53, -3.73 }, .yaw_degrees = -12.0, .style = .bogner },
+    .{ .center = .{ -3.25, 1.53, -3.73 }, .yaw_degrees = 12.0, .style = .mesa },
+};
 const equipment_offset_x: f32 = -14.52;
 // 65 mm clear space leaves opposing side jacks readable without scattering the
 // input chain across the room.
@@ -98,7 +111,7 @@ fn pedalDetail(value: f32) f32 {
 }
 
 pub const Mesh = struct {
-    pub const max_vertices = 105_000;
+    pub const max_vertices = 140_000;
     pub const max_emissive_lights = 16;
 
     vertices: [max_vertices]Vertex = undefined,
@@ -148,6 +161,12 @@ const materials = struct {
     const amplifier_panel = Material{ .base_color = .{ 0.39, 0.36, 0.28 }, .roughness = 0.25, .metallic = 0.68 };
     const amplifier_piping = Material{ .base_color = .{ 0.76, 0.65, 0.41 }, .roughness = 0.31, .metallic = 0.38 };
     const amplifier_badge = Material{ .base_color = .{ 0.84, 0.67, 0.30 }, .roughness = 0.20, .metallic = 0.82 };
+    const bogner_vinyl = Material{ .base_color = .{ 0.055, 0.026, 0.015 }, .roughness = 0.60, .metallic = 0.03 };
+    const bogner_grille = Material{ .base_color = .{ 0.22, 0.13, 0.065 }, .roughness = 0.86, .metallic = 0.01 };
+    const bogner_panel = Material{ .base_color = .{ 0.48, 0.33, 0.14 }, .roughness = 0.27, .metallic = 0.55 };
+    const mesa_vinyl = Material{ .base_color = .{ 0.115, 0.085, 0.055 }, .roughness = 0.57, .metallic = 0.03 };
+    const mesa_grille = Material{ .base_color = .{ 0.42, 0.36, 0.25 }, .roughness = 0.88, .metallic = 0.01 };
+    const mesa_panel = Material{ .base_color = .{ 0.64, 0.61, 0.52 }, .roughness = 0.20, .metallic = 0.72 };
     const studio_wall = Material{ .base_color = .{ 0.235, 0.205, 0.168 }, .roughness = 0.96, .metallic = 0.0 };
     const studio_wall_trim = Material{ .base_color = .{ 0.255, 0.105, 0.030 }, .roughness = 0.62, .metallic = 0.02 };
     const acoustic_panel = Material{ .base_color = .{ 0.025, 0.042, 0.041 }, .roughness = 0.96, .metallic = 0.0 };
@@ -188,7 +207,7 @@ pub fn build(mesh: *Mesh, rig: *const demo.Rig, state: BuildState) !void {
     try addStudioRoom(mesh);
     const equipment_vertex_start = mesh.len;
     const equipment_light_start = mesh.emissive_light_len;
-    try addComboAmplifier(mesh);
+    for (combo_placements) |placement| try addComboAmplifier(mesh, placement);
 
     for (rig.pedals, 0..) |pedal, index| {
         const placement = pedalPlacement(rig, index) orelse unreachable;
@@ -739,21 +758,61 @@ fn addWallSconce(mesh: *Mesh, center: [3]f32) !void {
     });
 }
 
-fn addComboAmplifier(mesh: *Mesh) !void {
+const AmplifierPalette = struct {
+    vinyl: Material,
+    grille: Material,
+    grille_thread: Material,
+    panel: Material,
+    piping: Material,
+    badge: Material,
+};
+
+fn amplifierPalette(style: AmplifierStyle) AmplifierPalette {
+    return switch (style) {
+        .dumble => .{
+            .vinyl = materials.amplifier_vinyl,
+            .grille = materials.amplifier_grille,
+            .grille_thread = materials.amplifier_grille_thread,
+            .panel = materials.amplifier_panel,
+            .piping = materials.amplifier_piping,
+            .badge = materials.amplifier_badge,
+        },
+        .bogner => .{
+            .vinyl = materials.bogner_vinyl,
+            .grille = materials.bogner_grille,
+            .grille_thread = materials.amplifier_vinyl,
+            .panel = materials.bogner_panel,
+            .piping = materials.amplifier_piping,
+            .badge = materials.amplifier_badge,
+        },
+        .mesa => .{
+            .vinyl = materials.mesa_vinyl,
+            .grille = materials.mesa_grille,
+            .grille_thread = materials.amplifier_panel,
+            .panel = materials.mesa_panel,
+            .piping = materials.chrome,
+            .badge = materials.polished_chrome,
+        },
+    };
+}
+
+fn addComboAmplifier(mesh: *Mesh, placement: ComboPlacement) !void {
     const floor_top: f32 = 0.28;
-    const center = combo_center;
+    const center = placement.center;
     const size = combo_size;
+    const palette = amplifierPalette(placement.style);
+    const vertex_start = mesh.len;
     const front_z = center[2] + size[2] * 0.5;
     const scale_x = size[0] / 5.15;
     const scale_y = size[1] / 3.0;
     const scale_z = size[2] / 1.34;
     const control_scale = @min(scale_x, scale_y);
 
-    try addBeveledBox(mesh, center, size, 0.18, materials.amplifier_vinyl);
+    try addBeveledBox(mesh, center, size, 0.18, palette.vinyl);
 
     const grille_center_y = floor_top + 1.22 * scale_y;
     const grille_size = [3]f32{ size[0] - 0.50 * scale_x, 2.05 * scale_y, 0.075 * scale_z };
-    try addBox(mesh, .{ center[0], grille_center_y, front_z + 0.045 * scale_z }, grille_size, materials.amplifier_grille);
+    try addBox(mesh, .{ center[0], grille_center_y, front_z + 0.045 * scale_z }, grille_size, palette.grille);
 
     const speaker_z = front_z + 0.090 * scale_z;
     try addCylinder(mesh, .{ center[0], grille_center_y - 0.05 * scale_y, speaker_z }, 0.80 * control_scale, 0.035 * scale_z, materials.rubber, .z);
@@ -763,22 +822,22 @@ fn addComboAmplifier(mesh: *Mesh) !void {
     const grille_bottom = grille_center_y - grille_size[1] * 0.5;
     for (0..18) |index| {
         const x = grille_left + (@as(f32, @floatFromInt(index)) + 0.5) * grille_size[0] / 18.0;
-        try addBox(mesh, .{ x, grille_center_y, front_z + 0.120 * scale_z }, .{ 0.018 * scale_x, grille_size[1], 0.020 * scale_z }, materials.amplifier_grille_thread);
+        try addBox(mesh, .{ x, grille_center_y, front_z + 0.120 * scale_z }, .{ 0.018 * scale_x, grille_size[1], 0.020 * scale_z }, palette.grille_thread);
     }
     for (0..8) |index| {
         const y = grille_bottom + (@as(f32, @floatFromInt(index)) + 0.5) * grille_size[1] / 8.0;
-        try addBox(mesh, .{ center[0], y, front_z + 0.126 * scale_z }, .{ grille_size[0], 0.014 * scale_y, 0.018 * scale_z }, materials.amplifier_grille_thread);
+        try addBox(mesh, .{ center[0], y, front_z + 0.126 * scale_z }, .{ grille_size[0], 0.014 * scale_y, 0.018 * scale_z }, palette.grille_thread);
     }
 
     const piping_depth: f32 = 0.035 * scale_z;
     const piping_z = front_z + 0.148 * scale_z;
-    try addBox(mesh, .{ center[0], grille_center_y + grille_size[1] * 0.5, piping_z }, .{ grille_size[0] + 0.10 * scale_x, 0.050 * scale_y, piping_depth }, materials.amplifier_piping);
-    try addBox(mesh, .{ center[0], grille_center_y - grille_size[1] * 0.5, piping_z }, .{ grille_size[0] + 0.10 * scale_x, 0.050 * scale_y, piping_depth }, materials.amplifier_piping);
-    try addBox(mesh, .{ grille_left, grille_center_y, piping_z }, .{ 0.050 * scale_x, grille_size[1], piping_depth }, materials.amplifier_piping);
-    try addBox(mesh, .{ -grille_left, grille_center_y, piping_z }, .{ 0.050 * scale_x, grille_size[1], piping_depth }, materials.amplifier_piping);
+    try addBox(mesh, .{ center[0], grille_center_y + grille_size[1] * 0.5, piping_z }, .{ grille_size[0] + 0.10 * scale_x, 0.050 * scale_y, piping_depth }, palette.piping);
+    try addBox(mesh, .{ center[0], grille_center_y - grille_size[1] * 0.5, piping_z }, .{ grille_size[0] + 0.10 * scale_x, 0.050 * scale_y, piping_depth }, palette.piping);
+    try addBox(mesh, .{ grille_left, grille_center_y, piping_z }, .{ 0.050 * scale_x, grille_size[1], piping_depth }, palette.piping);
+    try addBox(mesh, .{ center[0] + grille_size[0] * 0.5, grille_center_y, piping_z }, .{ 0.050 * scale_x, grille_size[1], piping_depth }, palette.piping);
 
     const panel_y = floor_top + size[1] - 0.34 * scale_y;
-    try addBox(mesh, .{ center[0], panel_y, front_z + 0.080 * scale_z }, .{ size[0] - 0.48 * scale_x, 0.43 * scale_y, 0.11 * scale_z }, materials.amplifier_panel);
+    try addBox(mesh, .{ center[0], panel_y, front_z + 0.080 * scale_z }, .{ size[0] - 0.48 * scale_x, 0.43 * scale_y, 0.11 * scale_z }, palette.panel);
     try addBox(mesh, .{ center[0] - 1.82 * scale_x, panel_y, front_z + 0.150 * scale_z }, .{ 0.18 * scale_x, 0.24 * scale_y, 0.05 * scale_z }, materials.black_metal);
     for (0..6) |index| {
         const x = center[0] - 1.20 * scale_x + @as(f32, @floatFromInt(index)) * 0.47 * scale_x;
@@ -788,7 +847,7 @@ fn addComboAmplifier(mesh: *Mesh) !void {
     try addCylinder(mesh, .{ center[0] + 1.77 * scale_x, panel_y, front_z + 0.175 * scale_z }, 0.115 * control_scale, 0.11 * scale_z, materials.chrome, .z);
     try addCylinder(mesh, .{ center[0] + 1.77 * scale_x, panel_y, front_z + 0.245 * scale_z }, 0.065 * control_scale, 0.055 * scale_z, materials.rubber, .z);
 
-    try addBox(mesh, .{ center[0] - 1.55 * scale_x, grille_center_y + 0.49 * scale_y, piping_z + 0.035 * scale_z }, .{ 0.62 * scale_x, 0.18 * scale_y, 0.055 * scale_z }, materials.amplifier_badge);
+    try addBox(mesh, .{ center[0] - 1.55 * scale_x, grille_center_y + 0.49 * scale_y, piping_z + 0.035 * scale_z }, .{ 0.62 * scale_x, 0.18 * scale_y, 0.055 * scale_z }, palette.badge);
 
     const top_y = center[1] + size[1] * 0.5;
     try addBox(mesh, .{ center[0] - 0.72 * scale_x, top_y + 0.11 * scale_y, center[2] }, .{ 0.18 * scale_x, 0.22 * scale_y, 0.38 * scale_z }, materials.chrome);
@@ -797,6 +856,26 @@ fn addComboAmplifier(mesh: *Mesh) !void {
 
     try addBox(mesh, .{ center[0] - size[0] * 0.34, floor_top - 0.035, center[2] }, .{ 0.46 * scale_x, 0.21 * scale_y, 0.62 * scale_z }, materials.rubber);
     try addBox(mesh, .{ center[0] + size[0] * 0.34, floor_top - 0.035, center[2] }, .{ 0.46 * scale_x, 0.21 * scale_y, 0.62 * scale_z }, materials.rubber);
+
+    rotateMeshRangeY(mesh, vertex_start, center, placement.yaw_degrees);
+}
+
+fn rotateMeshRangeY(mesh: *Mesh, vertex_start: usize, center: [3]f32, degrees: f32) void {
+    if (degrees == 0) return;
+    const radians = degrees * std.math.pi / 180.0;
+    const cosine = @cos(radians);
+    const sine = @sin(radians);
+    for (mesh.vertices[vertex_start..mesh.len]) |*item| {
+        const x = item.position[0] - center[0];
+        const z = item.position[2] - center[2];
+        item.position[0] = center[0] + x * cosine + z * sine;
+        item.position[2] = center[2] - x * sine + z * cosine;
+
+        const normal_x = item.normal[0];
+        const normal_z = item.normal[2];
+        item.normal[0] = normal_x * cosine + normal_z * sine;
+        item.normal[2] = -normal_x * sine + normal_z * cosine;
+    }
 }
 
 fn addPedal(
