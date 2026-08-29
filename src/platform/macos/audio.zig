@@ -1,13 +1,173 @@
 const contract = @import("audio_contract");
 const std = @import("std");
 
-const c = @cImport({
-    @cInclude("CoreAudio/CoreAudio.h");
-    @cInclude("CoreFoundation/CoreFoundation.h");
-});
+const ca = struct {
+    pub const OSStatus = i32;
+    pub const Boolean = u8;
+    pub const AudioObjectID = u32;
+    pub const AudioDeviceID = AudioObjectID;
+    pub const AudioStreamID = AudioObjectID;
+    pub const AudioObjectPropertySelector = u32;
+    pub const AudioObjectPropertyScope = u32;
+    pub const AudioObjectPropertyElement = u32;
+    pub const CFStringRef = ?*const anyopaque;
 
-const system_object: c.AudioObjectID = c.kAudioObjectSystemObject;
-const master_element: c.AudioObjectPropertyElement = c.kAudioObjectPropertyElementMain;
+    pub const AudioObjectPropertyAddress = extern struct {
+        mSelector: AudioObjectPropertySelector,
+        mScope: AudioObjectPropertyScope,
+        mElement: AudioObjectPropertyElement,
+    };
+
+    pub const AudioBuffer = extern struct {
+        mNumberChannels: u32,
+        mDataByteSize: u32,
+        mData: ?*anyopaque,
+    };
+
+    pub const AudioBufferList = extern struct {
+        mNumberBuffers: u32,
+        mBuffers: [1]AudioBuffer,
+    };
+
+    pub const SMPTETime = extern struct {
+        mSubframes: i16,
+        mSubframeDivisor: i16,
+        mCounter: u32,
+        mType: u32,
+        mFlags: u32,
+        mHours: i16,
+        mMinutes: i16,
+        mSeconds: i16,
+        mFrames: i16,
+    };
+
+    pub const AudioTimeStamp = extern struct {
+        mSampleTime: f64,
+        mHostTime: u64,
+        mRateScalar: f64,
+        mWordClockTime: u64,
+        mSMPTETime: SMPTETime,
+        mFlags: u32,
+        mReserved: u32,
+    };
+
+    pub const AudioStreamBasicDescription = extern struct {
+        mSampleRate: f64,
+        mFormatID: u32,
+        mFormatFlags: u32,
+        mBytesPerPacket: u32,
+        mFramesPerPacket: u32,
+        mBytesPerFrame: u32,
+        mChannelsPerFrame: u32,
+        mBitsPerChannel: u32,
+        mReserved: u32,
+    };
+
+    pub const kAudioObjectUnknown: AudioObjectID = 0;
+    pub const kAudioObjectSystemObject: AudioObjectID = 1;
+    pub const kAudioObjectPropertyElementMain: AudioObjectPropertyElement = 0;
+    pub const kAudioObjectPropertyScopeGlobal = fourcc("glob");
+    pub const kAudioObjectPropertyScopeInput = fourcc("inpt");
+    pub const kAudioObjectPropertyScopeOutput = fourcc("outp");
+    pub const kAudioObjectPropertyName = fourcc("lnam");
+    pub const kAudioDevicePropertyDeviceUID = fourcc("uid ");
+    pub const kAudioDevicePropertyNominalSampleRate = fourcc("nsrt");
+    pub const kAudioDevicePropertyStreams = fourcc("stm#");
+    pub const kAudioDevicePropertyBufferFrameSize = fourcc("fsiz");
+    pub const kAudioDevicePropertyStreamConfiguration = fourcc("slay");
+    pub const kAudioStreamPropertyVirtualFormat = fourcc("sfmt");
+    pub const kAudioFormatLinearPCM = fourcc("lpcm");
+    pub const kAudioFormatFlagIsFloat: u32 = 1 << 0;
+    pub const kAudioFormatFlagIsBigEndian: u32 = 1 << 1;
+    pub const kAudioFormatFlagIsSignedInteger: u32 = 1 << 2;
+    pub const kAudioFormatFlagIsAlignedHigh: u32 = 1 << 4;
+    pub const kAudioFormatFlagIsNonInterleaved: u32 = 1 << 5;
+    pub const kAudioTimeStampSampleTimeValid: u32 = 1 << 0;
+    pub const kAudioTimeStampHostTimeValid: u32 = 1 << 1;
+    pub const kCFStringEncodingUTF8: u32 = 0x08000100;
+
+    pub extern "c" fn CFRelease(value: *const anyopaque) void;
+    pub extern "c" fn CFStringGetCString(
+        string: *const anyopaque,
+        buffer: [*]u8,
+        buffer_size: isize,
+        encoding: u32,
+    ) Boolean;
+    pub extern "c" fn AudioConvertHostTimeToNanos(host_time: u64) u64;
+};
+
+const AudioDeviceIOProc = *const fn (
+    device: ca.AudioObjectID,
+    now: [*c]const ca.AudioTimeStamp,
+    input_data: [*c]const ca.AudioBufferList,
+    input_time: [*c]const ca.AudioTimeStamp,
+    output_data: [*c]ca.AudioBufferList,
+    output_time: [*c]const ca.AudioTimeStamp,
+    client_data: ?*anyopaque,
+) callconv(.c) ca.OSStatus;
+const AudioDeviceIOProcID = ?AudioDeviceIOProc;
+
+extern "c" fn AudioObjectGetPropertyDataSize(
+    object: ca.AudioObjectID,
+    property: *const ca.AudioObjectPropertyAddress,
+    qualifier_size: u32,
+    qualifier_data: ?*const anyopaque,
+    data_size: *u32,
+) ca.OSStatus;
+extern "c" fn AudioObjectGetPropertyData(
+    object: ca.AudioObjectID,
+    property: *const ca.AudioObjectPropertyAddress,
+    qualifier_size: u32,
+    qualifier_data: ?*const anyopaque,
+    data_size: *u32,
+    data: *anyopaque,
+) ca.OSStatus;
+extern "c" fn AudioObjectIsPropertySettable(
+    object: ca.AudioObjectID,
+    property: *const ca.AudioObjectPropertyAddress,
+    settable: *ca.Boolean,
+) ca.OSStatus;
+extern "c" fn AudioObjectSetPropertyData(
+    object: ca.AudioObjectID,
+    property: *const ca.AudioObjectPropertyAddress,
+    qualifier_size: u32,
+    qualifier_data: ?*const anyopaque,
+    data_size: u32,
+    data: *const anyopaque,
+) ca.OSStatus;
+extern "c" fn AudioDeviceCreateIOProcID(
+    device: ca.AudioObjectID,
+    io_proc: AudioDeviceIOProc,
+    client_data: ?*anyopaque,
+    io_proc_id: *AudioDeviceIOProcID,
+) ca.OSStatus;
+extern "c" fn AudioDeviceDestroyIOProcID(
+    device: ca.AudioObjectID,
+    io_proc_id: AudioDeviceIOProcID,
+) ca.OSStatus;
+extern "c" fn AudioDeviceStart(
+    device: ca.AudioObjectID,
+    io_proc_id: AudioDeviceIOProcID,
+) ca.OSStatus;
+extern "c" fn AudioDeviceStop(
+    device: ca.AudioObjectID,
+    io_proc_id: AudioDeviceIOProcID,
+) ca.OSStatus;
+
+fn fourcc(comptime value: *const [4]u8) u32 {
+    return (@as(u32, value[0]) << 24) |
+        (@as(u32, value[1]) << 16) |
+        (@as(u32, value[2]) << 8) |
+        @as(u32, value[3]);
+}
+
+const kAudioHardwarePropertyDevices = fourcc("dev#");
+const kAudioHardwarePropertyDefaultInputDevice = fourcc("dIn ");
+const kAudioHardwarePropertyDefaultOutputDevice = fourcc("dOut");
+const kAudioDevicePropertyUsesVariableBufferFrameSizes = fourcc("vfsz");
+
+const system_object: ca.AudioObjectID = ca.kAudioObjectSystemObject;
+const master_element: ca.AudioObjectPropertyElement = ca.kAudioObjectPropertyElementMain;
 const max_native_channels = 64;
 
 pub const CoreAudioDriver = struct {
@@ -25,12 +185,12 @@ pub const CoreAudioDriver = struct {
         const devices = try deviceIds(allocator);
         defer allocator.free(devices);
 
-        const default_input = getDefaultDevice(.input) catch c.kAudioObjectUnknown;
-        const default_output = getDefaultDevice(.output) catch c.kAudioObjectUnknown;
+        const default_input = getDefaultDevice(.input) catch ca.kAudioObjectUnknown;
+        const default_output = getDefaultDevice(.output) catch ca.kAudioObjectUnknown;
 
         for (devices) |device| {
-            const input_channels = channelCount(device, c.kAudioObjectPropertyScopeInput) catch 0;
-            const output_channels = channelCount(device, c.kAudioObjectPropertyScopeOutput) catch 0;
+            const input_channels = channelCount(device, ca.kAudioObjectPropertyScopeInput) catch 0;
+            const output_channels = channelCount(device, ca.kAudioObjectPropertyScopeOutput) catch 0;
             const include = switch (direction) {
                 .input => input_channels > 0,
                 .output => output_channels > 0,
@@ -42,12 +202,12 @@ pub const CoreAudioDriver = struct {
             var name_storage: [512]u8 = undefined;
             const id = try stringProperty(
                 device,
-                c.kAudioDevicePropertyDeviceUID,
+                ca.kAudioDevicePropertyDeviceUID,
                 id_storage[0..],
             );
             const name = try stringProperty(
                 device,
-                c.kAudioObjectPropertyName,
+                ca.kAudioObjectPropertyName,
                 name_storage[0..],
             );
             try visitor(visitor_context, .{
@@ -89,11 +249,11 @@ pub const CoreAudioDriver = struct {
         }
         const device = input_device orelse output_device orelse return error.NoDeviceSelected;
         const input_channels = if (input_device != null)
-            try channelCount(device, c.kAudioObjectPropertyScopeInput)
+            try channelCount(device, ca.kAudioObjectPropertyScopeInput)
         else
             0;
         const output_channels = if (output_device != null)
-            try channelCount(device, c.kAudioObjectPropertyScopeOutput)
+            try channelCount(device, ca.kAudioObjectPropertyScopeOutput)
         else
             0;
         if (input_device != null and input_channels == 0) return error.DeviceHasNoInput;
@@ -108,22 +268,22 @@ pub const CoreAudioDriver = struct {
         const sample_rate = try numberProperty(
             f64,
             device,
-            c.kAudioDevicePropertyNominalSampleRate,
-            c.kAudioObjectPropertyScopeGlobal,
+            ca.kAudioDevicePropertyNominalSampleRate,
+            ca.kAudioObjectPropertyScopeGlobal,
         );
         const nominal_frames = try numberProperty(
             u32,
             device,
-            c.kAudioDevicePropertyBufferFrameSize,
-            c.kAudioObjectPropertyScopeGlobal,
+            ca.kAudioDevicePropertyBufferFrameSize,
+            ca.kAudioObjectPropertyScopeGlobal,
         );
         const maximum_frames = variableMaximumFrames(device) catch nominal_frames;
         const input_format = if (input_device != null)
-            try directionFormat(device, c.kAudioObjectPropertyScopeInput)
+            try directionFormat(device, ca.kAudioObjectPropertyScopeInput)
         else
             null;
         const output_format = if (output_device != null)
-            try directionFormat(device, c.kAudioObjectPropertyScopeOutput)
+            try directionFormat(device, ca.kAudioObjectPropertyScopeOutput)
         else
             null;
 
@@ -137,13 +297,13 @@ pub const CoreAudioDriver = struct {
             .input_format = input_format,
             .output_format = output_format,
         };
-        try osStatus(c.AudioDeviceCreateIOProcID(
+        try osStatus(AudioDeviceCreateIOProcID(
             device,
             CoreAudioSession.ioProc,
             session,
             &session.io_proc_id,
         ));
-        errdefer _ = c.AudioDeviceDestroyIOProcID(device, session.io_proc_id);
+        errdefer _ = AudioDeviceDestroyIOProcID(device, session.io_proc_id);
 
         return .{
             .session = .{ .context = session, .vtable = &session_vtable },
@@ -169,13 +329,13 @@ pub const CoreAudioDriver = struct {
 };
 
 const CoreAudioSession = struct {
-    device: c.AudioDeviceID,
+    device: ca.AudioDeviceID,
     direction: contract.Direction,
     callback_context: *anyopaque,
     callback: contract.ProcessCallback,
     input_format: ?contract.SampleFormat,
     output_format: ?contract.SampleFormat,
-    io_proc_id: c.AudioDeviceIOProcID = null,
+    io_proc_id: AudioDeviceIOProcID = null,
     input_views: [max_native_channels]contract.InputChannelView = undefined,
     output_views: [max_native_channels]contract.OutputChannelView = undefined,
     running: bool = false,
@@ -187,39 +347,39 @@ const CoreAudioSession = struct {
     fn start(context: *anyopaque) !void {
         const self = cast(context);
         if (self.running) return;
-        try osStatus(c.AudioDeviceStart(self.device, self.io_proc_id));
+        try osStatus(AudioDeviceStart(self.device, self.io_proc_id));
         self.running = true;
     }
 
     fn stop(context: *anyopaque) void {
         const self = cast(context);
         if (!self.running) return;
-        _ = c.AudioDeviceStop(self.device, self.io_proc_id);
+        _ = AudioDeviceStop(self.device, self.io_proc_id);
         self.running = false;
     }
 
     fn requestRestart(context: *anyopaque) void {
         const self = cast(context);
-        self.stop();
-        self.start() catch {};
+        CoreAudioSession.stop(self);
+        CoreAudioSession.start(self) catch {};
     }
 
     fn close(context: *anyopaque) void {
         const self = cast(context);
-        self.stop();
-        _ = c.AudioDeviceDestroyIOProcID(self.device, self.io_proc_id);
+        CoreAudioSession.stop(self);
+        _ = AudioDeviceDestroyIOProcID(self.device, self.io_proc_id);
         std.heap.page_allocator.destroy(self);
     }
 
     fn ioProc(
-        _: c.AudioObjectID,
-        now: [*c]const c.AudioTimeStamp,
-        input_data: [*c]const c.AudioBufferList,
-        input_time: [*c]const c.AudioTimeStamp,
-        output_data: [*c]c.AudioBufferList,
-        output_time: [*c]const c.AudioTimeStamp,
+        _: ca.AudioObjectID,
+        now: [*c]const ca.AudioTimeStamp,
+        input_data: [*c]const ca.AudioBufferList,
+        input_time: [*c]const ca.AudioTimeStamp,
+        output_data: [*c]ca.AudioBufferList,
+        output_time: [*c]const ca.AudioTimeStamp,
         client_data: ?*anyopaque,
-    ) callconv(.c) c.OSStatus {
+    ) callconv(.c) ca.OSStatus {
         const self: *CoreAudioSession = @ptrCast(@alignCast(client_data.?));
 
         const frames = self.frameCount(input_data, output_data) orelse return 0;
@@ -253,24 +413,28 @@ const CoreAudioSession = struct {
 
     fn frameCount(
         self: *CoreAudioSession,
-        input_data: [*c]const c.AudioBufferList,
-        output_data: [*c]const c.AudioBufferList,
+        input_data: [*c]const ca.AudioBufferList,
+        output_data: [*c]const ca.AudioBufferList,
     ) ?u32 {
-        if (self.direction != .output and self.input_format) |format| {
-            if (framesFromList(input_data, format)) |frames| return frames;
+        if (self.direction != .output) {
+            if (self.input_format) |format| {
+                if (framesFromList(input_data, format)) |frames| return frames;
+            }
         }
-        if (self.direction != .input and self.output_format) |format| {
-            if (framesFromList(output_data, format)) |frames| return frames;
+        if (self.direction != .input) {
+            if (self.output_format) |format| {
+                if (framesFromList(output_data, format)) |frames| return frames;
+            }
         }
         return null;
     }
 
     fn buildInputViews(
         self: *CoreAudioSession,
-        list: [*c]const c.AudioBufferList,
+        list: [*c]const ca.AudioBufferList,
         format: contract.SampleFormat,
     ) usize {
-        const buffers: [*]const c.AudioBuffer = @ptrCast(&list.*.mBuffers);
+        const buffers: [*]const ca.AudioBuffer = @ptrCast(&list.*.mBuffers);
         var count: usize = 0;
         for (buffers[0..list.*.mNumberBuffers]) |buffer| {
             const data = buffer.mData orelse continue;
@@ -290,10 +454,10 @@ const CoreAudioSession = struct {
 
     fn buildOutputViews(
         self: *CoreAudioSession,
-        list: [*c]c.AudioBufferList,
+        list: [*c]ca.AudioBufferList,
         format: contract.SampleFormat,
     ) usize {
-        const buffers: [*]c.AudioBuffer = @ptrCast(&list.*.mBuffers);
+        const buffers: [*]ca.AudioBuffer = @ptrCast(&list.*.mBuffers);
         var count: usize = 0;
         for (buffers[0..list.*.mNumberBuffers]) |buffer| {
             const data = buffer.mData orelse continue;
@@ -320,9 +484,9 @@ const session_vtable: contract.Session.VTable = .{
 };
 
 fn address(
-    selector: c.AudioObjectPropertySelector,
-    scope: c.AudioObjectPropertyScope,
-) c.AudioObjectPropertyAddress {
+    selector: ca.AudioObjectPropertySelector,
+    scope: ca.AudioObjectPropertyScope,
+) ca.AudioObjectPropertyAddress {
     return .{
         .mSelector = selector,
         .mScope = scope,
@@ -330,35 +494,42 @@ fn address(
     };
 }
 
-fn osStatus(status: c.OSStatus) !void {
+fn osStatus(status: ca.OSStatus) !void {
     if (status != 0) return error.CoreAudioFailure;
 }
 
 fn numberProperty(
     comptime T: type,
-    object: c.AudioObjectID,
-    selector: c.AudioObjectPropertySelector,
-    scope: c.AudioObjectPropertyScope,
+    object: ca.AudioObjectID,
+    selector: ca.AudioObjectPropertySelector,
+    scope: ca.AudioObjectPropertyScope,
 ) !T {
     var value: T = undefined;
     var size: u32 = @sizeOf(T);
     var property = address(selector, scope);
-    try osStatus(c.AudioObjectGetPropertyData(object, &property, 0, null, &size, &value));
+    try osStatus(AudioObjectGetPropertyData(
+        object,
+        &property,
+        0,
+        null,
+        &size,
+        @ptrCast(&value),
+    ));
     return value;
 }
 
 fn setNumberProperty(
     comptime T: type,
-    object: c.AudioObjectID,
-    selector: c.AudioObjectPropertySelector,
+    object: ca.AudioObjectID,
+    selector: ca.AudioObjectPropertySelector,
     value: T,
 ) !void {
-    var property = address(selector, c.kAudioObjectPropertyScopeGlobal);
-    var settable: c.Boolean = 0;
-    try osStatus(c.AudioObjectIsPropertySettable(object, &property, &settable));
+    var property = address(selector, ca.kAudioObjectPropertyScopeGlobal);
+    var settable: ca.Boolean = 0;
+    try osStatus(AudioObjectIsPropertySettable(object, &property, &settable));
     if (settable == 0) return error.PropertyNotSettable;
     var mutable_value = value;
-    try osStatus(c.AudioObjectSetPropertyData(
+    try osStatus(AudioObjectSetPropertyData(
         object,
         &property,
         0,
@@ -368,70 +539,70 @@ fn setNumberProperty(
     ));
 }
 
-fn preferSampleRate(device: c.AudioDeviceID, requested: f64) !void {
+fn preferSampleRate(device: ca.AudioDeviceID, requested: f64) !void {
     if (!std.math.isFinite(requested) or requested <= 0.0) return error.InvalidSampleRate;
     const actual = try numberProperty(
         f64,
         device,
-        c.kAudioDevicePropertyNominalSampleRate,
-        c.kAudioObjectPropertyScopeGlobal,
+        ca.kAudioDevicePropertyNominalSampleRate,
+        ca.kAudioObjectPropertyScopeGlobal,
     );
     if (@abs(actual - requested) < 0.5) return;
-    try setNumberProperty(f64, device, c.kAudioDevicePropertyNominalSampleRate, requested);
+    try setNumberProperty(f64, device, ca.kAudioDevicePropertyNominalSampleRate, requested);
 }
 
-fn preferBufferFrames(device: c.AudioDeviceID, requested: u32) !void {
+fn preferBufferFrames(device: ca.AudioDeviceID, requested: u32) !void {
     if (requested == 0) return error.InvalidBufferFrameCount;
     const actual = try numberProperty(
         u32,
         device,
-        c.kAudioDevicePropertyBufferFrameSize,
-        c.kAudioObjectPropertyScopeGlobal,
+        ca.kAudioDevicePropertyBufferFrameSize,
+        ca.kAudioObjectPropertyScopeGlobal,
     );
     if (actual == requested) return;
-    try setNumberProperty(u32, device, c.kAudioDevicePropertyBufferFrameSize, requested);
+    try setNumberProperty(u32, device, ca.kAudioDevicePropertyBufferFrameSize, requested);
 }
 
-fn variableMaximumFrames(device: c.AudioDeviceID) !u32 {
+fn variableMaximumFrames(device: ca.AudioDeviceID) !u32 {
     return numberProperty(
         u32,
         device,
-        c.kAudioDevicePropertyUsesVariableBufferFrameSizes,
-        c.kAudioObjectPropertyScopeGlobal,
+        kAudioDevicePropertyUsesVariableBufferFrameSizes,
+        ca.kAudioObjectPropertyScopeGlobal,
     );
 }
 
-fn deviceIds(allocator: std.mem.Allocator) ![]c.AudioDeviceID {
+fn deviceIds(allocator: std.mem.Allocator) ![]ca.AudioDeviceID {
     var property = address(
-        c.kAudioHardwarePropertyDevices,
-        c.kAudioObjectPropertyScopeGlobal,
+        kAudioHardwarePropertyDevices,
+        ca.kAudioObjectPropertyScopeGlobal,
     );
     var bytes: u32 = 0;
-    try osStatus(c.AudioObjectGetPropertyDataSize(system_object, &property, 0, null, &bytes));
-    const count = bytes / @sizeOf(c.AudioDeviceID);
-    const devices = try allocator.alloc(c.AudioDeviceID, count);
+    try osStatus(AudioObjectGetPropertyDataSize(system_object, &property, 0, null, &bytes));
+    const count = bytes / @sizeOf(ca.AudioDeviceID);
+    const devices = try allocator.alloc(ca.AudioDeviceID, count);
     errdefer allocator.free(devices);
-    try osStatus(c.AudioObjectGetPropertyData(system_object, &property, 0, null, &bytes, devices.ptr));
+    try osStatus(AudioObjectGetPropertyData(system_object, &property, 0, null, &bytes, devices.ptr));
     return devices;
 }
 
-fn getDefaultDevice(direction: contract.Direction) !c.AudioDeviceID {
-    const selector: c.AudioObjectPropertySelector = switch (direction) {
-        .input => c.kAudioHardwarePropertyDefaultInputDevice,
-        .output => c.kAudioHardwarePropertyDefaultOutputDevice,
+fn getDefaultDevice(direction: contract.Direction) !ca.AudioDeviceID {
+    const selector: ca.AudioObjectPropertySelector = switch (direction) {
+        .input => kAudioHardwarePropertyDefaultInputDevice,
+        .output => kAudioHardwarePropertyDefaultOutputDevice,
         .duplex => return error.InvalidDefaultDeviceDirection,
     };
     const device = try numberProperty(
-        c.AudioDeviceID,
+        ca.AudioDeviceID,
         system_object,
         selector,
-        c.kAudioObjectPropertyScopeGlobal,
+        ca.kAudioObjectPropertyScopeGlobal,
     );
-    if (device == c.kAudioObjectUnknown) return error.DefaultDeviceUnavailable;
+    if (device == ca.kAudioObjectUnknown) return error.DefaultDeviceUnavailable;
     return device;
 }
 
-fn findDevice(uid: []const u8) !c.AudioDeviceID {
+fn findDevice(uid: []const u8) !ca.AudioDeviceID {
     const allocator = std.heap.page_allocator;
     const devices = try deviceIds(allocator);
     defer allocator.free(devices);
@@ -439,7 +610,7 @@ fn findDevice(uid: []const u8) !c.AudioDeviceID {
         var storage: [512]u8 = undefined;
         const candidate = stringProperty(
             device,
-            c.kAudioDevicePropertyDeviceUID,
+            ca.kAudioDevicePropertyDeviceUID,
             storage[0..],
         ) catch continue;
         if (std.mem.eql(u8, uid, candidate)) return device;
@@ -448,62 +619,69 @@ fn findDevice(uid: []const u8) !c.AudioDeviceID {
 }
 
 fn stringProperty(
-    object: c.AudioObjectID,
-    selector: c.AudioObjectPropertySelector,
+    object: ca.AudioObjectID,
+    selector: ca.AudioObjectPropertySelector,
     storage: []u8,
 ) ![]const u8 {
     if (storage.len == 0) return error.EmptyStringStorage;
-    var property = address(selector, c.kAudioObjectPropertyScopeGlobal);
-    var value: c.CFStringRef = null;
-    var size: u32 = @sizeOf(c.CFStringRef);
-    try osStatus(c.AudioObjectGetPropertyData(object, &property, 0, null, &size, &value));
+    var property = address(selector, ca.kAudioObjectPropertyScopeGlobal);
+    var value: ca.CFStringRef = null;
+    var size: u32 = @sizeOf(ca.CFStringRef);
+    try osStatus(AudioObjectGetPropertyData(
+        object,
+        &property,
+        0,
+        null,
+        &size,
+        @ptrCast(&value),
+    ));
     const string = value orelse return error.MissingStringProperty;
-    defer c.CFRelease(string);
-    if (c.CFStringGetCString(
+    defer ca.CFRelease(string);
+    if (ca.CFStringGetCString(
         string,
         storage.ptr,
         @intCast(storage.len),
-        c.kCFStringEncodingUTF8,
+        ca.kCFStringEncodingUTF8,
     ) == 0) return error.StringPropertyTooLong;
     return std.mem.sliceTo(storage, 0);
 }
 
-fn channelCount(device: c.AudioDeviceID, scope: c.AudioObjectPropertyScope) !u32 {
-    var property = address(c.kAudioDevicePropertyStreamConfiguration, scope);
+fn channelCount(device: ca.AudioDeviceID, scope: ca.AudioObjectPropertyScope) !u32 {
+    var property = address(ca.kAudioDevicePropertyStreamConfiguration, scope);
     var size: u32 = 0;
-    try osStatus(c.AudioObjectGetPropertyDataSize(device, &property, 0, null, &size));
-    const storage = try std.heap.page_allocator.alignedAlloc(u8, .of(c.AudioBufferList), size);
+    try osStatus(AudioObjectGetPropertyDataSize(device, &property, 0, null, &size));
+    const storage = try std.heap.page_allocator.alignedAlloc(u8, .of(ca.AudioBufferList), size);
     defer std.heap.page_allocator.free(storage);
-    try osStatus(c.AudioObjectGetPropertyData(device, &property, 0, null, &size, storage.ptr));
-    const list: *const c.AudioBufferList = @ptrCast(storage.ptr);
-    const buffers: [*]const c.AudioBuffer = @ptrCast(&list.mBuffers);
+    try osStatus(AudioObjectGetPropertyData(device, &property, 0, null, &size, storage.ptr));
+    const list: *const ca.AudioBufferList = @ptrCast(storage.ptr);
+    const buffers: [*]const ca.AudioBuffer = @ptrCast(&list.mBuffers);
     var channels: u32 = 0;
     for (buffers[0..list.mNumberBuffers]) |buffer| channels += buffer.mNumberChannels;
     return channels;
 }
 
 fn directionFormat(
-    device: c.AudioDeviceID,
-    scope: c.AudioObjectPropertyScope,
+    device: ca.AudioDeviceID,
+    scope: ca.AudioObjectPropertyScope,
 ) !contract.SampleFormat {
-    var property = address(c.kAudioDevicePropertyStreams, scope);
+    var property = address(ca.kAudioDevicePropertyStreams, scope);
     var size: u32 = 0;
-    try osStatus(c.AudioObjectGetPropertyDataSize(device, &property, 0, null, &size));
+    try osStatus(AudioObjectGetPropertyDataSize(device, &property, 0, null, &size));
     if (size == 0) return error.NoAudioStreams;
-    const stream_count = size / @sizeOf(c.AudioStreamID);
-    const streams = try std.heap.page_allocator.alloc(c.AudioStreamID, stream_count);
+    const stream_count = size / @sizeOf(ca.AudioStreamID);
+    const streams = try std.heap.page_allocator.alloc(ca.AudioStreamID, stream_count);
     defer std.heap.page_allocator.free(streams);
-    try osStatus(c.AudioObjectGetPropertyData(device, &property, 0, null, &size, streams.ptr));
+    try osStatus(AudioObjectGetPropertyData(device, &property, 0, null, &size, streams.ptr));
 
     var common: ?contract.SampleFormat = null;
     for (streams) |stream| {
         var format_property = address(
-            c.kAudioStreamPropertyVirtualFormat,
-            c.kAudioObjectPropertyScopeGlobal,
+            ca.kAudioStreamPropertyVirtualFormat,
+            ca.kAudioObjectPropertyScopeGlobal,
         );
-        var asbd: c.AudioStreamBasicDescription = undefined;
-        var asbd_size: u32 = @sizeOf(c.AudioStreamBasicDescription);
-        try osStatus(c.AudioObjectGetPropertyData(
+        var asbd: ca.AudioStreamBasicDescription = undefined;
+        var asbd_size: u32 = @sizeOf(ca.AudioStreamBasicDescription);
+        try osStatus(AudioObjectGetPropertyData(
             stream,
             &format_property,
             0,
@@ -521,21 +699,27 @@ fn directionFormat(
     return common orelse error.NoAudioStreams;
 }
 
-fn formatFromAsbd(asbd: c.AudioStreamBasicDescription) !contract.SampleFormat {
-    if (asbd.mFormatID != c.kAudioFormatLinearPCM) return error.UnsupportedNativeFormat;
-    const is_float = asbd.mFormatFlags & c.kAudioFormatFlagIsFloat != 0;
-    const is_signed = asbd.mFormatFlags & c.kAudioFormatFlagIsSignedInteger != 0;
+fn formatFromAsbd(asbd: ca.AudioStreamBasicDescription) !contract.SampleFormat {
+    if (asbd.mFormatID != ca.kAudioFormatLinearPCM) return error.UnsupportedNativeFormat;
+    const is_float = asbd.mFormatFlags & ca.kAudioFormatFlagIsFloat != 0;
+    const is_signed = asbd.mFormatFlags & ca.kAudioFormatFlagIsSignedInteger != 0;
     if (!is_float and !is_signed) return error.UnsupportedNativeFormat;
-    const bytes_per_sample = asbd.mBitsPerChannel / 8;
+    const non_interleaved = asbd.mFormatFlags & ca.kAudioFormatFlagIsNonInterleaved != 0;
+    const bytes_per_sample = if (non_interleaved)
+        asbd.mBytesPerFrame
+    else if (asbd.mChannelsPerFrame > 0)
+        asbd.mBytesPerFrame / asbd.mChannelsPerFrame
+    else
+        0;
     const format: contract.SampleFormat = .{
         .kind = if (is_float) .floating_point else .signed_integer,
         .container_bytes = @intCast(bytes_per_sample),
         .valid_bits = @intCast(asbd.mBitsPerChannel),
-        .byte_order = if (asbd.mFormatFlags & c.kAudioFormatFlagIsBigEndian != 0)
+        .byte_order = if (asbd.mFormatFlags & ca.kAudioFormatFlagIsBigEndian != 0)
             .big
         else
             .little,
-        .aligned_high = asbd.mFormatFlags & c.kAudioFormatFlagIsAlignedHigh != 0,
+        .aligned_high = asbd.mFormatFlags & ca.kAudioFormatFlagIsAlignedHigh != 0,
     };
     try format.validate();
     return format;
@@ -545,7 +729,7 @@ fn framesFromList(
     list: anytype,
     format: contract.SampleFormat,
 ) ?u32 {
-    const buffers: [*]const c.AudioBuffer = @ptrCast(&list.*.mBuffers);
+    const buffers: [*]const ca.AudioBuffer = @ptrCast(&list.*.mBuffers);
     for (buffers[0..list.*.mNumberBuffers]) |buffer| {
         if (buffer.mData == null or buffer.mNumberChannels == 0) continue;
         const bytes_per_frame = buffer.mNumberChannels * format.container_bytes;
@@ -556,26 +740,26 @@ fn framesFromList(
 }
 
 fn streamTime(
-    now: [*c]const c.AudioTimeStamp,
-    input_time: [*c]const c.AudioTimeStamp,
-    output_time: [*c]const c.AudioTimeStamp,
+    now: [*c]const ca.AudioTimeStamp,
+    input_time: [*c]const ca.AudioTimeStamp,
+    output_time: [*c]const ca.AudioTimeStamp,
 ) contract.StreamTime {
     var result: contract.StreamTime = .{};
-    if (now != null and now.*.mFlags & c.kAudioTimeStampSampleTimeValid != 0) {
+    if (now != null and now.*.mFlags & ca.kAudioTimeStampSampleTimeValid != 0) {
         result.valid |= contract.TimeValidity.sample_position;
         result.sample_position = @intFromFloat(now.*.mSampleTime);
     }
-    if (now != null and now.*.mFlags & c.kAudioTimeStampHostTimeValid != 0) {
+    if (now != null and now.*.mFlags & ca.kAudioTimeStampHostTimeValid != 0) {
         result.valid |= contract.TimeValidity.monotonic_ns;
-        result.monotonic_ns = c.AudioConvertHostTimeToNanos(now.*.mHostTime);
+        result.monotonic_ns = ca.AudioConvertHostTimeToNanos(now.*.mHostTime);
     }
-    if (input_time != null and input_time.*.mFlags & c.kAudioTimeStampHostTimeValid != 0) {
+    if (input_time != null and input_time.*.mFlags & ca.kAudioTimeStampHostTimeValid != 0) {
         result.valid |= contract.TimeValidity.input_acquisition_ns;
-        result.input_acquisition_ns = c.AudioConvertHostTimeToNanos(input_time.*.mHostTime);
+        result.input_acquisition_ns = ca.AudioConvertHostTimeToNanos(input_time.*.mHostTime);
     }
-    if (output_time != null and output_time.*.mFlags & c.kAudioTimeStampHostTimeValid != 0) {
+    if (output_time != null and output_time.*.mFlags & ca.kAudioTimeStampHostTimeValid != 0) {
         result.valid |= contract.TimeValidity.output_presentation_ns;
-        result.output_presentation_ns = c.AudioConvertHostTimeToNanos(output_time.*.mHostTime);
+        result.output_presentation_ns = ca.AudioConvertHostTimeToNanos(output_time.*.mHostTime);
     }
     return result;
 }
