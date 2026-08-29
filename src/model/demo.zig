@@ -85,6 +85,7 @@ pub const Accent = enum {
     cyan,
     green,
     amber,
+    gold,
     violet,
     coral,
 };
@@ -156,21 +157,18 @@ const amp_controls = [_]Control{
     .{ .role = "master", .label = "MASTER", .normalized_value = 0.42 },
 };
 
-const fuzz_controls = [_]Control{
-    .{ .role = "output", .label = "OUTPUT", .normalized_value = 0.58 },
-    .{ .role = "distortion", .label = "DIST", .normalized_value = 0.76 },
+const tumnus_deluxe_controls = [_]Control{
+    .{ .role = "bass", .label = "BASS", .normalized_value = 0.5, .interactive = false },
+    .{ .role = "mids", .label = "MIDS", .normalized_value = 0.5, .interactive = false },
+    .{ .role = "treble", .label = "TREBLE", .normalized_value = 0.5, .interactive = false },
+    .{ .role = "level", .label = "LEVEL", .normalized_value = 0.6, .interactive = false },
+    .{ .role = "gain", .label = "GAIN", .normalized_value = 0.5, .interactive = false },
 };
 
-const phaser_controls = [_]Control{
-    .{ .role = "intensity", .label = "INTENSITY", .normalized_value = 0.36 },
-    .{ .role = "speed", .label = "SPEED", .normalized_value = 0.69 },
-};
-
-const modulation_controls = [_]Control{
-    .{ .role = "depth", .label = "DEPTH", .normalized_value = 0.22 },
-    .{ .role = "shape", .label = "SHAPE", .normalized_value = 0.67 },
-    .{ .role = "wave", .label = "WAVE", .normalized_value = 0.51 },
-    .{ .role = "rate", .label = "RATE", .normalized_value = 0.74 },
+const big_muff_controls = [_]Control{
+    .{ .role = "volume", .label = "VOLUME", .normalized_value = 0.6, .interactive = false },
+    .{ .role = "tone", .label = "TONE", .normalized_value = 0.5, .interactive = false },
+    .{ .role = "sustain", .label = "SUSTAIN", .normalized_value = 0.5, .interactive = false },
 };
 
 const king_of_tone_controls = [_]Control{
@@ -211,32 +209,33 @@ const pedals = [_]Pedal{
         },
     },
     .{
-        .role = "fuzz_service",
-        .name = "FUZZ",
-        .controls = &fuzz_controls,
+        .role = "overdrive",
+        .name = "TUMNUS DELUXE",
+        .controls = &tumnus_deluxe_controls,
         .ports = &side_ports,
         .enclosure = enclosures.single,
-        .accent = .coral,
-        .indicator_brightness = 0.82,
-    },
-    .{
-        .role = "phaser",
-        .name = "PHASER",
-        .controls = &phaser_controls,
-        .ports = &side_ports,
-        .enclosure = enclosures.single,
-        .accent = .amber,
+        .accent = .gold,
         .indicator_brightness = 0.72,
+        .indicator_colors = &.{.amber},
+        .processor = .{
+            .format = .nam,
+            .resource_id = "nam.wampler-tumnus-deluxe",
+            .capture_variant = "normal-b5-m5-t5-l6-g5",
+        },
     },
     .{
-        .role = "modulation",
-        .name = "MODULATION",
-        .controls = &modulation_controls,
+        .role = "fuzz",
+        .name = "OP-AMP BIG MUFF",
+        .controls = &big_muff_controls,
         .ports = &side_ports,
-        .enclosure = enclosures.double,
+        .enclosure = enclosures.single,
         .accent = .green,
-        .footswitch_count = 2,
         .indicator_brightness = 0.90,
+        .processor = .{
+            .format = .nam,
+            .resource_id = "nam.electro-harmonix-op-amp-big-muff",
+            .capture_variant = "v6-tone5-sustain5",
+        },
     },
     .{
         .role = "dual_overdrive",
@@ -261,8 +260,7 @@ const connections = [_]Connection{
     .{ .from = .{ .pedal_output = 0 }, .to = .{ .pedal_input = 1 } },
     .{ .from = .{ .pedal_output = 1 }, .to = .{ .pedal_input = 2 } },
     .{ .from = .{ .pedal_output = 2 }, .to = .{ .pedal_input = 3 } },
-    .{ .from = .{ .pedal_output = 3 }, .to = .{ .pedal_input = 4 } },
-    .{ .from = .{ .pedal_output = 4 }, .to = .amplifier_input },
+    .{ .from = .{ .pedal_output = 3 }, .to = .amplifier_input },
 };
 
 pub const rig = Rig{
@@ -274,28 +272,38 @@ pub const rig = Rig{
 
 test "demo rig is connected semantically" {
     const std = @import("std");
-    try std.testing.expectEqual(@as(usize, 5), rig.pedals.len);
+    try std.testing.expectEqual(@as(usize, 4), rig.pedals.len);
     try std.testing.expectEqual(rig.pedals.len + 1, rig.connections.len);
     try std.testing.expectEqual(Presentation.closed, rig.pedals[1].presentation);
-    try std.testing.expectEqual(PedalFormFactor.double, rig.pedals[3].enclosure.form_factor);
-    try std.testing.expectEqual(@as(f32, 2), rig.pedals[3].enclosure.footprint_units);
+    try std.testing.expectEqual(PedalFormFactor.single, rig.pedals[2].enclosure.form_factor);
+    try std.testing.expectEqual(@as(f32, 1), rig.pedals[2].enclosure.footprint_units);
     try std.testing.expectEqual(JackSurface.right_side, rig.pedals[0].ports[0].surface);
     try std.testing.expectEqual(JackSurface.left_side, rig.pedals[0].ports[1].surface);
     try std.testing.expectEqual(JackSurface.right_side, rig.pedals[1].ports[0].surface);
     try std.testing.expectEqual(JackSurface.left_side, rig.pedals[1].ports[1].surface);
-    try std.testing.expectEqual(JackSurface.right_side, rig.pedals[3].ports[0].surface);
-    try std.testing.expectEqual(JackSurface.left_side, rig.pedals[3].ports[1].surface);
-    try std.testing.expectEqual(PortRole.output, rig.pedals[3].ports[1].role);
+    try std.testing.expectEqual(JackSurface.right_side, rig.pedals[2].ports[0].surface);
+    try std.testing.expectEqual(JackSurface.left_side, rig.pedals[2].ports[1].surface);
+    try std.testing.expectEqual(PortRole.output, rig.pedals[2].ports[1].role);
     try std.testing.expectEqual(@as(u8, 2), rig.cabinet.speaker_count);
     try std.testing.expectEqualStrings("nam.sp-compressor", rig.pedals[0].processor.?.resource_id);
     try std.testing.expectEqualStrings("mid", rig.pedals[0].processor.?.capture_variant);
-    try std.testing.expectEqual(PedalFormFactor.double, rig.pedals[4].enclosure.form_factor);
-    try std.testing.expectEqualStrings("nam.king-of-tone-clone", rig.pedals[4].processor.?.resource_id);
-    try std.testing.expectEqualStrings("both-channels-dst", rig.pedals[4].processor.?.capture_variant);
-    try std.testing.expectEqual(@as(usize, 6), rig.pedals[4].controls.len);
-    for (rig.pedals[4].controls) |control| try std.testing.expect(!control.interactive);
-    try std.testing.expectEqual(IndicatorColor.amber, rig.pedals[4].indicator_colors[0]);
-    try std.testing.expectEqual(IndicatorColor.red, rig.pedals[4].indicator_colors[1]);
+    try std.testing.expectEqual(PedalFormFactor.double, rig.pedals[3].enclosure.form_factor);
+    try std.testing.expectEqualStrings("nam.king-of-tone-clone", rig.pedals[3].processor.?.resource_id);
+    try std.testing.expectEqualStrings("both-channels-dst", rig.pedals[3].processor.?.capture_variant);
+    try std.testing.expectEqual(@as(usize, 6), rig.pedals[3].controls.len);
+    for (rig.pedals[3].controls) |control| try std.testing.expect(!control.interactive);
+    try std.testing.expectEqual(IndicatorColor.amber, rig.pedals[3].indicator_colors[0]);
+    try std.testing.expectEqual(IndicatorColor.red, rig.pedals[3].indicator_colors[1]);
+    try std.testing.expectEqual(Accent.gold, rig.pedals[1].accent);
+    try std.testing.expectEqualStrings("nam.wampler-tumnus-deluxe", rig.pedals[1].processor.?.resource_id);
+    try std.testing.expectEqualStrings("normal-b5-m5-t5-l6-g5", rig.pedals[1].processor.?.capture_variant);
+    try std.testing.expectEqual(@as(usize, 5), rig.pedals[1].controls.len);
+    for (rig.pedals[1].controls) |control| try std.testing.expect(!control.interactive);
+    try std.testing.expectEqual(Accent.green, rig.pedals[2].accent);
+    try std.testing.expectEqualStrings("nam.electro-harmonix-op-amp-big-muff", rig.pedals[2].processor.?.resource_id);
+    try std.testing.expectEqualStrings("v6-tone5-sustain5", rig.pedals[2].processor.?.capture_variant);
+    try std.testing.expectEqual(@as(usize, 3), rig.pedals[2].controls.len);
+    for (rig.pedals[2].controls) |control| try std.testing.expect(!control.interactive);
     try std.testing.expectEqualStrings("MID", rig.pedals[0].mode_switch.?.positions[1]);
     try std.testing.expectEqual(
         @import("../core/equipment_state.zig").ThreePosition.middle,

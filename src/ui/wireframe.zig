@@ -1301,6 +1301,7 @@ fn accentColor(accent: demo.Accent) Color {
         .cyan => .{ .r = 0.23, .g = 0.72, .b = 1.0 },
         .green => .{ .r = 0.29, .g = 0.94, .b = 0.50 },
         .amber => .{ .r = 1.0, .g = 0.55, .b = 0.10 },
+        .gold => .{ .r = 0.92, .g = 0.62, .b = 0.16 },
         .violet => .{ .r = 0.88, .g = 0.34, .b = 0.82 },
         .coral => .{ .r = 1.0, .g = 0.31, .b = 0.23 },
     };

@@ -44,6 +44,8 @@ recommended behavior, and optional behavior respectively.
 | [AUD-004](audio/aud-004-cabinet-ir-convolution.md) | Audio | Implemented | Complete portable cabinet IR convolution after NAM inference |
 | [AUD-005](audio/aud-005-first-pedal-sp-compressor.md) | Audio | Implemented | First-pedal SP Compressor mapping, bypass, and LED interaction |
 | [AUD-006](audio/aud-006-king-of-tone-dual-overdrive.md) | Audio | Implemented | Violet King of Tone dual-channel NAM mapping and interaction |
+| [AUD-007](audio/aud-007-tumnus-deluxe-overdrive.md) | Audio | Accepted | Gold Tumnus Deluxe NAM grid and deferred full-quality activation |
+| [AUD-008](audio/aud-008-op-amp-big-muff-fuzz.md) | Audio | Accepted | Green Op-Amp Big Muff NAM grid and removal of the red placeholder pedal |
 | [HOST-001](hosts/host-001-runtime-hosts.md) | Hosts | Deferred | Studio, standalone, CLAP, and VST3 hosts |
 
 ## Status lifecycle

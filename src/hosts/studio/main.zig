@@ -23,9 +23,8 @@ const Studio = struct {
         const modes = [_]robine.core.equipment_state.ThreePosition{self.first_pedal_mode.position()};
         const footswitch_masks = [_]u8{
             @intFromBool(self.first_pedal_enabled.isEnabled()),
-            1,
-            1,
-            3,
+            0,
+            0,
             @as(u8, @intFromBool(self.king_orange_enabled.isEnabled())) |
                 (@as(u8, @intFromBool(self.king_red_enabled.isEnabled())) << 1),
         };
@@ -121,7 +120,7 @@ const Studio = struct {
                     point,
                     window_aspect,
                     &robine.model.demo.rig,
-                    4,
+                    3,
                     footswitch_index,
                 )) {
                     const state = if (footswitch_index == 0)

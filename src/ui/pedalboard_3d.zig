@@ -560,7 +560,9 @@ fn addComponents(mesh: *Mesh, base: [3]f32, size: [3]f32, tray_height: f32) !voi
 fn addControls(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void {
     const count = pedal.controls.len;
     if (count == 0) return;
-    const columns: usize = if (pedal.enclosure.form_factor == .double and count == 6)
+    const columns: usize = if (pedal.enclosure.form_factor == .single and (count == 3 or count == 5))
+        3
+    else if (pedal.enclosure.form_factor == .double and count == 6)
         3
     else if (pedal.enclosure.form_factor == .double)
         @min(count, 4)
@@ -571,7 +573,10 @@ fn addControls(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void
     for (pedal.controls, 0..) |control, index| {
         const column = index % columns;
         const row = index / columns;
-        const x = base[0] + size[0] * ((@as(f32, @floatFromInt(column)) + 0.5) / @as(f32, @floatFromInt(columns)) - 0.5) * 0.78;
+        const controls_in_row = @min(columns, count - row * columns);
+        const x = base[0] + size[0] *
+            ((@as(f32, @floatFromInt(column)) + 0.5) /
+                @as(f32, @floatFromInt(controls_in_row)) - 0.5) * 0.78;
         const row_fraction = if (rows <= 1)
             @as(f32, 0)
         else
@@ -1229,6 +1234,7 @@ fn accentMaterial(accent: demo.Accent) Material {
             .cyan => .{ 0.055, 0.31, 0.42 },
             .green => .{ 0.055, 0.32, 0.18 },
             .amber => .{ 0.58, 0.20, 0.025 },
+            .gold => .{ 0.62, 0.34, 0.045 },
             .violet => .{ 0.28, 0.075, 0.32 },
             .coral => .{ 0.52, 0.055, 0.035 },
         },
@@ -1290,7 +1296,7 @@ test "semantic pedalboard produces bounded 3D geometry" {
     try build(&mesh, &demo.rig, .{});
     try std.testing.expect(mesh.len > 30_000);
     try std.testing.expect(mesh.len < Mesh.max_vertices);
-    try std.testing.expectEqual(@as(usize, 11), mesh.emissiveLights().len);
+    try std.testing.expectEqual(@as(usize, 9), mesh.emissiveLights().len);
     try std.testing.expectEqual(@as(usize, 0), mesh.len % 3);
     for (mesh.items()) |item| {
         for (item.position) |value| try std.testing.expect(std.math.isFinite(value));
@@ -1306,7 +1312,7 @@ test "semantic pedalboard produces bounded 3D geometry" {
 }
 
 test "open presentation remains available outside the default rig" {
-    var pedals: [5]demo.Pedal = undefined;
+    var pedals: [4]demo.Pedal = undefined;
     for (demo.rig.pedals, 0..) |pedal, index| pedals[index] = pedal;
     pedals[1].presentation = .open;
     var rig = demo.rig;
@@ -1353,17 +1359,17 @@ test "disabled first pedal keeps its LED geometry but removes emission" {
 
 test "dual pedal footswitch mask controls each LED independently" {
     var mesh = Mesh{};
-    const masks = [_]u8{ 1, 1, 1, 3, 1 };
+    const masks = [_]u8{ 1, 0, 0, 1 };
     try build(&mesh, &demo.rig, .{ .pedal_footswitch_masks = &masks });
-    try std.testing.expect(mesh.emissiveLights()[9].intensity > 0);
-    try std.testing.expectEqual(@as(f32, 0.0), mesh.emissiveLights()[10].intensity);
-    try std.testing.expectEqual(@as([3]f32, .{ 1.0, 0.34, 0.008 }), mesh.emissiveLights()[9].color);
-    try std.testing.expectEqual(@as([3]f32, .{ 1.0, 0.018, 0.006 }), mesh.emissiveLights()[10].color);
+    try std.testing.expect(mesh.emissiveLights()[7].intensity > 0);
+    try std.testing.expectEqual(@as(f32, 0.0), mesh.emissiveLights()[8].intensity);
+    try std.testing.expectEqual(@as([3]f32, .{ 1.0, 0.34, 0.008 }), mesh.emissiveLights()[7].color);
+    try std.testing.expectEqual(@as([3]f32, .{ 1.0, 0.018, 0.006 }), mesh.emissiveLights()[8].color);
 }
 
 test "both King of Tone footswitches are independently pickable" {
     const aspect: f32 = 1200.0 / 760.0;
-    const placement = pedalPlacement(&demo.rig, 4) orelse return error.MissingKingOfTone;
+    const placement = pedalPlacement(&demo.rig, 3) orelse return error.MissingKingOfTone;
     for (0..2) |footswitch_index| {
         const x = placement.base[0] + placement.size[0] *
             ((@as(f32, @floatFromInt(footswitch_index)) + 1.0) / 3.0 - 0.5) * 0.72;
@@ -1381,7 +1387,7 @@ test "both King of Tone footswitches are independently pickable" {
             projected,
             aspect,
             &demo.rig,
-            4,
+            3,
             footswitch_index,
         ));
     }

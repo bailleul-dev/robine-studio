@@ -37,6 +37,16 @@ pub const king_of_tone_both_nam = @embedFile(
     "models/nam/king-of-tone-clone/Ly Pedals - King of Tone Clone - Both Channels DST.nam",
 );
 
+/// Neutral Normal-mode Tumnus capture used by the initial fixed mapping.
+pub const tumnus_deluxe_default_nam = @embedFile(
+    "models/nam/wampler-tumnus-deluxe/Tumnus Deluxe Nrm B-5 M-5 T-5 L-6 G-5.nam",
+);
+
+/// Median Op-Amp Big Muff capture used by the initial fixed catalog mapping.
+pub const op_amp_big_muff_default_nam = @embedFile(
+    "models/nam/electro-harmonix-op-amp-big-muff/EHX IC Big Muff V-6 T-5 S-5.nam",
+);
+
 /// Initial cabinet response. Position C is an opaque pack identifier: the
 /// source archive does not document its physical microphone placement.
 pub const default_cabinet_ir = @embedFile(
