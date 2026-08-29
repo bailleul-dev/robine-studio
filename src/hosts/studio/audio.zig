@@ -25,7 +25,7 @@ pub const StartupPlayer = struct {
         errdefer self.source.deinit(allocator);
         if (self.source.channels != 1) return error.DevelopmentInputMustBeMono;
 
-        self.model = try robine.audio.nam.Model.load(allocator, assets.default_nam);
+        self.model = try robine.audio.nam.Model.loadQuality(allocator, assets.default_nam, .lightweight);
         errdefer self.model.deinit();
         if (@abs(self.model.sample_rate - @as(f64, @floatFromInt(self.source.sample_rate))) > 0.5) {
             return error.SourceAndNamSampleRatesDiffer;
@@ -124,8 +124,17 @@ fn writeSample(
         },
         .signed_integer => {
             const valid_bits: u6 = @intCast(format.valid_bits);
-            const maximum: i64 = (@as(i64, 1) << (valid_bits - 1)) - 1;
-            var value: i64 = @intFromFloat(@round(std.math.clamp(sample, -1.0, 1.0) * @as(f32, @floatFromInt(maximum))));
+            const maximum: i64 = if (valid_bits == 64)
+                std.math.maxInt(i64)
+            else
+                (@as(i64, 1) << (valid_bits - 1)) - 1;
+            const normalized = std.math.clamp(sample, -1.0, 1.0);
+            var value: i64 = if (normalized <= -1.0)
+                -maximum
+            else if (normalized >= 1.0)
+                maximum
+            else
+                @intFromFloat(@round(@as(f64, normalized) * @as(f64, @floatFromInt(maximum))));
             if (format.aligned_high) value <<= @intCast(format.container_bytes * 8 - format.valid_bits);
             const bits: u64 = @bitCast(value);
             switch (format.container_bytes) {

@@ -37,9 +37,10 @@ recommended behavior, and optional behavior respectively.
 | [UI-009](ui/ui-009-pedal-control-hardware.md) | UI | Draft | Procedural chicken-head knobs and metal footswitches |
 | [UI-010](ui/ui-010-progressive-idle-ray-tracing.md) | UI | Draft | Bounded progressive ray-traced contact shading for static equipment views |
 | [UI-011](ui/ui-011-studio-chrome-and-context-controls.md) | UI | Draft | Persistent toolbar, contextual equipment strip, transport, and visual hierarchy |
-| [STU-001](studio/stu-001-rendering-engine-mvp.md) | Studio | Draft | No-audio equipment-modeling and rendering MVP |
+| [STU-001](studio/stu-001-rendering-engine-mvp.md) | Studio | Draft | Initial equipment-modeling and rendering milestone |
 | [AUD-001](audio/aud-001-audio-integration-boundary.md) | Audio | Draft | Real-time audio subsystem boundary |
 | [AUD-002](audio/aud-002-native-audio-backends.md) | Audio | Draft | Core Audio, ASIO, PipeWire, and ALSA transport contract |
+| [AUD-003](audio/aud-003-development-nam-playback.md) | Audio | Implemented | Portable WAV-to-NAM startup playback through the native output |
 | [HOST-001](hosts/host-001-runtime-hosts.md) | Hosts | Deferred | Studio, standalone, CLAP, and VST3 hosts |
 
 ## Status lifecycle

@@ -6,8 +6,9 @@ Status: Draft
 
 The first executable product milestone is Robine Studio: a desktop development
 host for exercising the semantic equipment model and its generated interactive
-views with real core parameters and simulated automation. It contains no sound
-generation or audio-device processing.
+views with real core parameters and simulated automation. Its initial rendering
+stage contains no sound generation or audio-device processing; AUD-003 adds the
+subsequent development playback stage without changing the rendering boundary.
 
 The milestone proves that pedals, electronics, pedalboards, amplifiers, cabinets,
 speakers, microphones, and their connections can be described through domain
@@ -68,12 +69,15 @@ A graphical CAD or drag-and-drop equipment authoring tool is explicitly outside
 the MVP. Equipment descriptions, catalog definitions, and visual recipes may be
 authored as data or Zig definitions and inspected in Studio.
 
-## No-audio constraint
+## Initial no-audio stage
 
-- Studio MUST NOT initialize an audio device.
+- The rendering milestone itself MUST be buildable and testable without an audio
+  device. AUD-003 explicitly supersedes the launch-time no-audio behavior for the
+  current Studio executable.
 - The UI MUST use CORE-001 parameters rather than temporary widget-local values.
 - Meter and automation inputs are deterministic simulations.
-- No DSP or plugin-format dependency is required to build or test Studio.
+- Renderer tests require no DSP or plugin-format dependency. Audio tests remain
+  independently selectable.
 
 ## Build interface
 
@@ -119,4 +123,4 @@ contract must not assume ownership of the application event loop.
 - A new knob family can be created by composing existing behavior with new or
   reused visual parts, without copying the knob implementation.
 - Steady-state previewing shows no frame-over-frame resource growth.
-- The Studio build has no audio or plugin-format link dependency.
+- The rendering modules have no audio or plugin-format dependency.

@@ -221,7 +221,16 @@ pub const Model = struct {
     head: Conv1d,
     head_scale: f32,
 
+    pub const Quality = enum {
+        lightweight,
+        full,
+    };
+
     pub fn load(allocator: std.mem.Allocator, bytes: []const u8) !Model {
+        return loadQuality(allocator, bytes, .full);
+    }
+
+    pub fn loadQuality(allocator: std.mem.Allocator, bytes: []const u8, quality: Quality) !Model {
         var parsed = try std.json.parseFromSlice(NamFile, allocator, bytes, .{
             .ignore_unknown_fields = true,
         });
@@ -233,8 +242,13 @@ pub const Model = struct {
         }
         if (parsed.value.config.submodels.len == 0) return error.EmptyNamContainer;
 
-        // NAM Core defaults a SlimmableContainer to its final, full-size model.
-        const submodel = &parsed.value.config.submodels[parsed.value.config.submodels.len - 1].model;
+        // NAM Core defaults a SlimmableContainer to its final model. Standalone
+        // playback may explicitly select the first low-latency submodel.
+        const submodel_index: usize = switch (quality) {
+            .lightweight => 0,
+            .full => parsed.value.config.submodels.len - 1,
+        };
+        const submodel = &parsed.value.config.submodels[submodel_index].model;
         if (!std.mem.eql(u8, submodel.version, "0.7.0")) return error.UnsupportedNamVersion;
         if (!std.mem.eql(u8, submodel.architecture, "WaveNet")) return error.UnsupportedNamArchitecture;
         if (submodel.sample_rate != parsed.value.sample_rate) return error.NamSampleRateMismatch;
@@ -442,6 +456,48 @@ test "Dumble full model agrees with NAM Core reference samples" {
         .{ .index = 255, .value = -0.00003424419992370531 },
         .{ .index = 1023, .value = -0.000034471431717975065 },
         .{ .index = 2047, .value = 0.00015691669250372797 },
+    };
+    var reference_index: usize = 0;
+    for (input.samples[0 .. references[references.len - 1].index + 1], 0..) |sample, index| {
+        const output = model.processSample(sample);
+        if (index == references[reference_index].index) {
+            try std.testing.expectApproxEqAbs(references[reference_index].value, output, 0.000002);
+            reference_index += 1;
+            if (reference_index == references.len) break;
+        }
+    }
+}
+
+test "Dumble lightweight model agrees with NAM Core reference samples" {
+    const wav = @import("wav.zig");
+    const allocator = std.testing.allocator;
+    const model_bytes = try std.Io.Dir.cwd().readFileAlloc(
+        std.testing.io,
+        "resources/audio/models/nam/dumble-ods-102-ford-hyper-accuracy-plus/SLAMMIN_DUMBLE_FORD_CLN_MAIN_S.nam",
+        allocator,
+        .limited(2 * 1024 * 1024),
+    );
+    defer allocator.free(model_bytes);
+    var model = try Model.loadQuality(allocator, model_bytes, .lightweight);
+    defer model.deinit();
+    const wav_bytes = try std.Io.Dir.cwd().readFileAlloc(
+        std.testing.io,
+        "resources/audio/fixtures/inputs/celestial-guitar-48k-mono.wav",
+        allocator,
+        .limited(8 * 1024 * 1024),
+    );
+    defer allocator.free(wav_bytes);
+    var input = try wav.decode(allocator, wav_bytes);
+    defer input.deinit(allocator);
+
+    try std.testing.expectEqual(@as(usize, 3), model.channels);
+    model.prewarm(64);
+    const references = [_]struct { index: usize, value: f32 }{
+        .{ .index = 0, .value = 0.00043589476263150573 },
+        .{ .index = 63, .value = 0.00043617613846436143 },
+        .{ .index = 255, .value = 0.0004358842270448804 },
+        .{ .index = 1023, .value = 0.00043544586515054107 },
+        .{ .index = 2047, .value = 0.0007064516539685428 },
     };
     var reference_index: usize = 0;
     for (input.samples[0 .. references[references.len - 1].index + 1], 0..) |sample, index| {
