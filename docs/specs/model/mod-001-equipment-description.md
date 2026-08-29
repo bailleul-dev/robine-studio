@@ -45,6 +45,10 @@ Catalog authors MAY define local geometry and dimensions. Product authors MUST
 assemble catalog objects through named roles, sites, constraints, and
 connections—not renderer coordinates.
 
+Pedal enclosures use the standardized authoring categories and physical
+definitions from MOD-004. A form-factor category never replaces the exact catalog
+enclosure definition.
+
 ## Equipment kinds
 
 The initial semantic model covers:
@@ -139,4 +143,3 @@ state. They MUST NOT become independent product descriptions.
 - Product descriptions reference core parameters by stable ID or path.
 - Unknown or incompatible part roles produce domain-oriented diagnostics.
 - A render scene can be discarded and regenerated without losing equipment state.
-

@@ -229,11 +229,7 @@ fn drawPedalboard(scene: *Scene, bounds: Bounds, pedals: []const demo.Pedal) ![8
     var weights: [8]f32 = undefined;
     var total_weight: f32 = 0;
     for (pedals, 0..) |pedal, index| {
-        weights[index] = switch (pedal.enclosure) {
-            .compact => 0.78,
-            .standard => 1.0,
-            .wide => 1.55,
-        };
+        weights[index] = pedal.enclosure.footprint_units;
         total_weight += weights[index];
     }
 
@@ -433,7 +429,7 @@ fn drawSignalChain(scene: *Scene, bounds: Bounds, rig: *const demo.Rig) !void {
         const node = Bounds{
             .left = pedal_start + @as(f32, @floatFromInt(index)) * pedal_spacing,
             .bottom = rail_y - 0.055,
-            .width = if (pedal.enclosure == .wide) 0.072 else 0.050,
+            .width = if (pedal.enclosure.form_factor == .double) 0.072 else 0.050,
             .height = 0.110,
         };
         try drawMiniPedal(scene, node, accentColor(pedal.accent), index == 3);

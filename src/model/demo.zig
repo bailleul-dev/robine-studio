@@ -4,10 +4,45 @@ pub const Control = struct {
     normalized_value: f32,
 };
 
-pub const Enclosure = enum {
-    compact,
-    standard,
-    wide,
+pub const PedalFormFactor = enum {
+    mini,
+    single,
+    double,
+    custom,
+};
+
+pub const DimensionsMm = struct {
+    width: f32,
+    depth: f32,
+    height: f32,
+};
+
+pub const PedalEnclosure = struct {
+    id: []const u8,
+    form_factor: PedalFormFactor,
+    footprint_units: f32,
+    dimensions: DimensionsMm,
+};
+
+pub const enclosures = struct {
+    pub const mini = PedalEnclosure{
+        .id = "generic.mini",
+        .form_factor = .mini,
+        .footprint_units = 0.65,
+        .dimensions = .{ .width = 45, .depth = 95, .height = 48 },
+    };
+    pub const single = PedalEnclosure{
+        .id = "generic.single",
+        .form_factor = .single,
+        .footprint_units = 1,
+        .dimensions = .{ .width = 70, .depth = 122, .height = 55 },
+    };
+    pub const double = PedalEnclosure{
+        .id = "generic.double",
+        .form_factor = .double,
+        .footprint_units = 2,
+        .dimensions = .{ .width = 145, .depth = 122, .height = 55 },
+    };
 };
 
 pub const Presentation = enum {
@@ -27,7 +62,7 @@ pub const Pedal = struct {
     role: []const u8,
     name: []const u8,
     controls: []const Control,
-    enclosure: Enclosure = .standard,
+    enclosure: PedalEnclosure = enclosures.single,
     presentation: Presentation = .closed,
     accent: Accent,
     footswitch_count: u8 = 1,
@@ -105,14 +140,14 @@ const pedals = [_]Pedal{
         .role = "compressor",
         .name = "COMPRESSOR",
         .controls = &compressor_controls,
-        .enclosure = .standard,
+        .enclosure = enclosures.single,
         .accent = .cyan,
     },
     .{
         .role = "fuzz_service",
         .name = "FUZZ",
         .controls = &fuzz_controls,
-        .enclosure = .standard,
+        .enclosure = enclosures.single,
         .presentation = .open,
         .accent = .coral,
     },
@@ -120,14 +155,14 @@ const pedals = [_]Pedal{
         .role = "phaser",
         .name = "PHASER",
         .controls = &phaser_controls,
-        .enclosure = .standard,
+        .enclosure = enclosures.single,
         .accent = .amber,
     },
     .{
         .role = "modulation",
         .name = "MODULATION",
         .controls = &modulation_controls,
-        .enclosure = .wide,
+        .enclosure = enclosures.double,
         .accent = .green,
         .footswitch_count = 2,
     },
@@ -135,7 +170,7 @@ const pedals = [_]Pedal{
         .role = "overdrive",
         .name = "OVERDRIVE",
         .controls = &drive_controls,
-        .enclosure = .standard,
+        .enclosure = enclosures.single,
         .accent = .violet,
         .footswitch_count = 2,
     },
@@ -162,5 +197,7 @@ test "demo rig is connected semantically" {
     try std.testing.expectEqual(@as(usize, 5), rig.pedals.len);
     try std.testing.expectEqual(rig.pedals.len + 1, rig.connections.len);
     try std.testing.expectEqual(Presentation.open, rig.pedals[1].presentation);
+    try std.testing.expectEqual(PedalFormFactor.double, rig.pedals[3].enclosure.form_factor);
+    try std.testing.expectEqual(@as(f32, 2), rig.pedals[3].enclosure.footprint_units);
     try std.testing.expectEqual(@as(u8, 2), rig.cabinet.speaker_count);
 }

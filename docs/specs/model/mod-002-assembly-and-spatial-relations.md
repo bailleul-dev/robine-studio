@@ -110,6 +110,10 @@ MUST detect:
 - Physical overlap when a relationship requires clearance.
 - Parts that do not fit their opening, zone, or footprint.
 
+Pedalboard distribution uses the physical footprint and layout units defined by
+MOD-004. It MUST NOT infer pedal width from control count, artwork, or renderer
+geometry.
+
 It MUST NOT silently choose arbitrary coordinates for an ambiguous assembly.
 Diagnostics name semantic roles and failed constraints rather than renderer nodes.
 
@@ -123,4 +127,3 @@ Diagnostics name semantic roles and failed constraints rather than renderer node
 - A two- or four-speaker cabinet is generated from the same speaker-grid pattern.
 - A microphone can be moved from cap center to cone edge using semantic placement.
 - Ambiguous and physically impossible assemblies fail with actionable diagnostics.
-

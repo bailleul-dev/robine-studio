@@ -24,6 +24,7 @@ recommended behavior, and optional behavior respectively.
 | [MOD-001](model/mod-001-equipment-description.md) | Model | Draft | Semantic descriptions of pedals, amplifiers, cabinets, and rigs |
 | [MOD-002](model/mod-002-assembly-and-spatial-relations.md) | Model | Draft | Mechanical assembly, placement constraints, articulation, and views |
 | [MOD-003](model/mod-003-connectivity-and-wiring.md) | Model | Draft | Internal electronics, external cabling, and typed connectivity graphs |
+| [MOD-004](model/mod-004-pedal-form-factors.md) | Model | Draft | Standard pedal footprints and enclosure definitions |
 | [UI-001](ui/ui-001-scene-composition.md) | UI | Draft | Equipment-to-scene projection and visual composition |
 | [UI-002](ui/ui-002-rendering-pipeline.md) | UI | Draft | Hybrid 3D equipment and 2D overlay rendering pipeline |
 | [UI-003](ui/ui-003-controls-and-interaction.md) | UI | Draft | Semantic equipment actions and parameter gestures |
