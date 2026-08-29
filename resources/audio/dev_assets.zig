@@ -6,10 +6,20 @@ pub const default_nam = @embedFile(
     "models/nam/dumble-ods-102-ford-hyper-accuracy-plus/SLAMMIN_DUMBLE_FORD_CLN_MAIN_S.nam",
 );
 
-/// Full-quality midpoint capture mapped to the first demo pedal.
-pub const first_pedal_nam = @embedFile(
+pub const first_pedal_low_nam = @embedFile(
+    "models/nam/sp-compressor/SpCompressor_Low.nam",
+);
+
+pub const first_pedal_mid_nam = @embedFile(
     "models/nam/sp-compressor/SpCompressor_Mid.nam",
 );
+
+pub const first_pedal_high_nam = @embedFile(
+    "models/nam/sp-compressor/SpCompressor_High.nam",
+);
+
+/// Mid remains the deterministic benchmark default.
+pub const first_pedal_nam = first_pedal_mid_nam;
 
 /// Initial cabinet response. Position C is an opaque pack identifier: the
 /// source archive does not document its physical microphone placement.

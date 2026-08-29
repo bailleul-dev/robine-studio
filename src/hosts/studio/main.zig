@@ -9,6 +9,7 @@ const Studio = struct {
     view: robine.ui.wireframe.ViewState = .rig,
     amplifier_focused: bool = false,
     first_pedal_enabled: robine.core.equipment_state.EquipmentSwitch = .init(true),
+    first_pedal_mode: robine.core.equipment_state.EquipmentModeSwitch = .init(.middle),
     equipment_revision: u64 = 0,
 
     fn project(self: *Studio) !void {
@@ -17,10 +18,11 @@ const Studio = struct {
 
     fn rebuildPedalboard(self: *Studio) !void {
         const enabled = [_]bool{self.first_pedal_enabled.isEnabled()};
+        const modes = [_]robine.core.equipment_state.ThreePosition{self.first_pedal_mode.position()};
         try robine.ui.pedalboard_3d.build(
             &self.pedalboard_mesh,
             &robine.model.demo.rig,
-            .{ .pedal_enabled = &enabled },
+            .{ .pedal_enabled = &enabled, .pedal_modes = &modes },
         );
         self.equipment_revision +%= 1;
     }
@@ -60,6 +62,23 @@ const Studio = struct {
             self.project() catch |err| {
                 self.amplifier_focused = true;
                 std.log.err("Scene projection failed after amplifier return: {s}", .{@errorName(err)});
+                return false;
+            };
+            return true;
+        }
+        if (self.view == .rig and !self.amplifier_focused and
+            robine.ui.pedalboard_3d.hitTestPedalModeSwitch(
+                point,
+                window_aspect,
+                &robine.model.demo.rig,
+                0,
+            ))
+        {
+            const previous = self.first_pedal_mode.position();
+            _ = self.first_pedal_mode.cycle();
+            self.rebuildPedalboard() catch |err| {
+                self.first_pedal_mode.setPosition(previous);
+                std.log.err("Pedal projection failed after mode change: {s}", .{@errorName(err)});
                 return false;
             };
             return true;
@@ -123,7 +142,11 @@ pub fn main() !void {
     try studio.project();
 
     var startup_player: studio_audio.StartupPlayer = undefined;
-    try startup_player.init(std.heap.page_allocator, &studio.first_pedal_enabled);
+    try startup_player.init(
+        std.heap.page_allocator,
+        &studio.first_pedal_enabled,
+        &studio.first_pedal_mode,
+    );
     defer startup_player.deinit();
 
     try platform.run(.{

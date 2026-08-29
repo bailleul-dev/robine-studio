@@ -8,11 +8,13 @@ pub const StartupPlayer = struct {
     allocator: std.mem.Allocator,
     driver: native_audio.CoreAudioDriver = .{},
     source: robine.audio.wav.Audio,
-    compressor: robine.audio.nam.Model,
+    compressors: [3]robine.audio.nam.Model,
     amplifier: robine.audio.nam.Model,
     cabinet: robine.audio.convolver.Convolver,
     compressor_enabled: *const robine.core.equipment_state.EquipmentSwitch,
+    compressor_mode: *const robine.core.equipment_state.EquipmentModeSwitch,
     compressor_bypass: robine.audio.bypass.Smoother,
+    mode_transition: robine.audio.mode_switch.Transition,
     pedal_block: []f32,
     amplifier_block: []f32,
     opened: ?contract.OpenedSession = null,
@@ -24,6 +26,7 @@ pub const StartupPlayer = struct {
         self: *StartupPlayer,
         allocator: std.mem.Allocator,
         compressor_enabled: *const robine.core.equipment_state.EquipmentSwitch,
+        compressor_mode: *const robine.core.equipment_state.EquipmentModeSwitch,
     ) !void {
         self.* = undefined;
         self.allocator = allocator;
@@ -31,25 +34,39 @@ pub const StartupPlayer = struct {
         self.opened = null;
         self.render_frame = 0;
         self.compressor_enabled = compressor_enabled;
+        self.compressor_mode = compressor_mode;
 
         self.source = try robine.audio.wav.decode(allocator, assets.input_wav);
         errdefer self.source.deinit(allocator);
         if (self.source.channels != 1) return error.DevelopmentInputMustBeMono;
 
-        self.compressor = try robine.audio.nam.Model.loadQuality(allocator, assets.first_pedal_nam, .full);
-        errdefer self.compressor.deinit();
+        const compressor_assets = [3][]const u8{
+            assets.first_pedal_low_nam,
+            assets.first_pedal_mid_nam,
+            assets.first_pedal_high_nam,
+        };
+        var initialized_compressors: usize = 0;
+        errdefer for (self.compressors[0..initialized_compressors]) |*compressor| compressor.deinit();
+        for (&self.compressors, compressor_assets) |*compressor, model_bytes| {
+            compressor.* = try robine.audio.nam.Model.loadQuality(allocator, model_bytes, .full);
+            initialized_compressors += 1;
+        }
         self.amplifier = try robine.audio.nam.Model.loadQuality(allocator, assets.default_nam, .full);
         errdefer self.amplifier.deinit();
-        if (@abs(self.compressor.sample_rate - self.amplifier.sample_rate) > 0.5 or
-            @abs(self.amplifier.sample_rate - @as(f64, @floatFromInt(self.source.sample_rate))) > 0.5)
-        {
+        if (@abs(self.amplifier.sample_rate - @as(f64, @floatFromInt(self.source.sample_rate))) > 0.5) {
             return error.SourceAndNamSampleRatesDiffer;
+        }
+        for (self.compressors) |compressor| {
+            if (@abs(compressor.sample_rate - self.amplifier.sample_rate) > 0.5) {
+                return error.SourceAndNamSampleRatesDiffer;
+            }
         }
         self.compressor_bypass = try .init(
             compressor_enabled.isEnabled(),
             self.amplifier.sample_rate,
             0.005,
         );
+        self.mode_transition = .init(compressor_mode.position());
 
         var cabinet_ir = try robine.audio.wav.decode(allocator, assets.default_cabinet_ir);
         defer cabinet_ir.deinit(allocator);
@@ -90,14 +107,14 @@ pub const StartupPlayer = struct {
         errdefer allocator.free(self.pedal_block);
         self.amplifier_block = try allocator.alloc(f32, opened.config.maximum_frames);
         errdefer allocator.free(self.amplifier_block);
-        try self.compressor.prepareBlock(opened.config.maximum_frames);
+        for (&self.compressors) |*compressor| try compressor.prepareBlock(opened.config.maximum_frames);
         try self.amplifier.prepareBlock(opened.config.maximum_frames);
-        self.compressor.prewarm(opened.config.maximum_frames);
+        for (&self.compressors) |*compressor| compressor.prewarm(opened.config.maximum_frames);
         self.amplifier.prewarm(opened.config.maximum_frames);
         self.opened = opened;
         try opened.session.start();
         std.log.info(
-            "Playing development guitar through SP Compressor Mid, full amp NAM, and Orange 2x12 V30 / SM57 C: {d:.0} Hz, {d} output channels, {d} frames",
+            "Playing development guitar through switchable SP Compressor, full amp NAM, and Orange 2x12 V30 / SM57 C: {d:.0} Hz, {d} output channels, {d} frames",
             .{ opened.config.sample_rate, opened.config.output_channels, opened.config.nominal_frames },
         );
     }
@@ -111,7 +128,7 @@ pub const StartupPlayer = struct {
         self.allocator.free(self.pedal_block);
         self.cabinet.deinit();
         self.amplifier.deinit();
-        self.compressor.deinit();
+        for (&self.compressors) |*compressor| compressor.deinit();
         self.source.deinit(self.allocator);
         self.* = undefined;
     }
@@ -122,6 +139,8 @@ pub const StartupPlayer = struct {
         const source_frames = self.source.frames();
         const rendered_frames = source_frames + self.cabinet.tailFrames() + self.cabinet.latencyFrames();
         const compressor_enabled = self.compressor_enabled.isEnabled();
+        const requested_mode = self.compressor_mode.position();
+        const render_wet = self.mode_transition.wantsWet(compressor_enabled, requested_mode);
         const active_frames = if (self.render_frame < source_frames)
             @min(cycle.frames, source_frames - self.render_frame)
         else
@@ -130,13 +149,20 @@ pub const StartupPlayer = struct {
         if (active_frames > 0) {
             const dry = self.source.samples[self.render_frame..][0..active_frames];
             const pedal = self.pedal_block[0..active_frames];
-            self.compressor.processBlock(dry, pedal);
+            const active_index: usize = @intFromEnum(self.mode_transition.activePosition());
+            self.compressors[active_index].processBlock(dry, pedal);
             for (pedal, dry) |*compressed, dry_sample| {
                 compressed.* = self.compressor_bypass.process(
                     dry_sample,
                     compressed.*,
-                    compressor_enabled,
+                    render_wet,
                 );
+            }
+            if (self.mode_transition.completeWhenDry(
+                requested_mode,
+                self.compressor_bypass.wetMix(),
+            )) |new_mode| {
+                self.compressors[@intFromEnum(new_mode)].reset();
             }
             self.amplifier.processBlock(pedal, self.amplifier_block[0..active_frames]);
         }

@@ -26,6 +26,42 @@ pub const EquipmentSwitch = struct {
     }
 };
 
+pub const ThreePosition = enum(u8) {
+    low,
+    middle,
+    high,
+
+    pub fn next(self: ThreePosition) ThreePosition {
+        return switch (self) {
+            .low => .middle,
+            .middle => .high,
+            .high => .low,
+        };
+    }
+};
+
+pub const EquipmentModeSwitch = struct {
+    value: std.atomic.Value(u8),
+
+    pub fn init(initial_position: ThreePosition) EquipmentModeSwitch {
+        return .{ .value = .init(@intFromEnum(initial_position)) };
+    }
+
+    pub fn position(self: *const EquipmentModeSwitch) ThreePosition {
+        return @enumFromInt(self.value.load(.acquire));
+    }
+
+    pub fn setPosition(self: *EquipmentModeSwitch, position_value: ThreePosition) void {
+        self.value.store(@intFromEnum(position_value), .release);
+    }
+
+    pub fn cycle(self: *EquipmentModeSwitch) ThreePosition {
+        const result = self.position().next();
+        self.setPosition(result);
+        return result;
+    }
+};
+
 test "equipment switch exposes one canonical state across consumers" {
     var state = EquipmentSwitch.init(true);
     try std.testing.expect(state.isEnabled());
@@ -33,4 +69,12 @@ test "equipment switch exposes one canonical state across consumers" {
     try std.testing.expect(!state.isEnabled());
     state.setEnabled(true);
     try std.testing.expect(state.isEnabled());
+}
+
+test "three-position equipment selector cycles deterministically" {
+    var state = EquipmentModeSwitch.init(.middle);
+    try std.testing.expectEqual(ThreePosition.middle, state.position());
+    try std.testing.expectEqual(ThreePosition.high, state.cycle());
+    try std.testing.expectEqual(ThreePosition.low, state.cycle());
+    try std.testing.expectEqual(ThreePosition.middle, state.cycle());
 }

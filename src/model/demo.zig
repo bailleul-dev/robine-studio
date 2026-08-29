@@ -88,6 +88,14 @@ pub const AudioProcessor = struct {
     capture_variant: []const u8,
 };
 
+pub const ThreeWaySwitch = struct {
+    role: []const u8,
+    label: []const u8,
+    positions: [3][]const u8,
+    default_position: @import("../core/equipment_state.zig").ThreePosition,
+    movement: enum { front_to_back },
+};
+
 pub const Pedal = struct {
     role: []const u8,
     name: []const u8,
@@ -99,6 +107,7 @@ pub const Pedal = struct {
     footswitch_count: u8 = 1,
     indicator_brightness: f32 = 1.0,
     processor: ?AudioProcessor = null,
+    mode_switch: ?ThreeWaySwitch = null,
 };
 
 pub const Amplifier = struct {
@@ -191,6 +200,13 @@ const pedals = [_]Pedal{
             .resource_id = "nam.sp-compressor",
             .capture_variant = "mid",
         },
+        .mode_switch = .{
+            .role = "compression_range",
+            .label = "RANGE",
+            .positions = .{ "LOW", "MID", "HIGH" },
+            .default_position = .middle,
+            .movement = .front_to_back,
+        },
     },
     .{
         .role = "fuzz_service",
@@ -264,6 +280,11 @@ test "demo rig is connected semantically" {
     try std.testing.expectEqual(@as(u8, 2), rig.cabinet.speaker_count);
     try std.testing.expectEqualStrings("nam.sp-compressor", rig.pedals[0].processor.?.resource_id);
     try std.testing.expectEqualStrings("mid", rig.pedals[0].processor.?.capture_variant);
+    try std.testing.expectEqualStrings("MID", rig.pedals[0].mode_switch.?.positions[1]);
+    try std.testing.expectEqual(
+        @import("../core/equipment_state.zig").ThreePosition.middle,
+        rig.pedals[0].mode_switch.?.default_position,
+    );
     for (rig.pedals) |pedal| {
         try std.testing.expect(pedal.indicator_brightness >= 0 and pedal.indicator_brightness <= 1);
     }

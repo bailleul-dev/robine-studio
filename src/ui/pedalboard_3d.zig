@@ -1,5 +1,6 @@
 const std = @import("std");
 const demo = @import("../model/demo.zig");
+const ThreePosition = @import("../core/equipment_state.zig").ThreePosition;
 const lighting = @import("lighting_lab.zig");
 
 pub const Vertex = lighting.Vertex;
@@ -66,6 +67,8 @@ pub const studio_viewport = struct {
 pub const BuildState = struct {
     /// Optional per-pedal runtime bypass state. Missing entries default to on.
     pedal_enabled: []const bool = &.{},
+    /// Optional per-pedal three-way selector state.
+    pedal_modes: []const ThreePosition = &.{},
 };
 
 const combo_center = [3]f32{ 0, 2.33, -5.55 };
@@ -149,8 +152,34 @@ pub fn build(mesh: *Mesh, rig: *const demo.Rig, state: BuildState) !void {
     for (rig.pedals, 0..) |pedal, index| {
         const placement = pedalPlacement(rig, index) orelse unreachable;
         const enabled = if (index < state.pedal_enabled.len) state.pedal_enabled[index] else true;
-        try addPedal(mesh, pedal, placement.base, placement.size, enabled);
+        const mode = if (index < state.pedal_modes.len)
+            state.pedal_modes[index]
+        else if (pedal.mode_switch) |mode_switch|
+            mode_switch.default_position
+        else
+            .middle;
+        try addPedal(mesh, pedal, placement.base, placement.size, enabled, mode);
     }
+}
+
+pub fn hitTestPedalModeSwitch(
+    point: [2]f32,
+    window_aspect: f32,
+    rig: *const demo.Rig,
+    pedal_index: usize,
+) bool {
+    const placement = pedalPlacement(rig, pedal_index) orelse return false;
+    if (rig.pedals[pedal_index].mode_switch == null) return false;
+    const center_world = modeSwitchCenter(placement);
+    const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
+    const center = projectToWindow(center_world, rig_camera, viewport_aspect) orelse return false;
+    const edge_x = projectToWindow(.{ center_world[0] + 0.30, center_world[1], center_world[2] }, rig_camera, viewport_aspect) orelse return false;
+    const edge_z = projectToWindow(.{ center_world[0], center_world[1], center_world[2] + 0.38 }, rig_camera, viewport_aspect) orelse return false;
+    const radius_x = @max(@abs(edge_x[0] - center[0]) * 1.6, 0.025);
+    const radius_y = @max(@abs(edge_z[1] - center[1]) * 1.6, 0.035);
+    const dx = (point[0] - center[0]) / radius_x;
+    const dy = (point[1] - center[1]) / radius_y;
+    return dx * dx + dy * dy <= 1.0;
 }
 
 pub fn hitTestPedalFootswitch(
@@ -184,6 +213,14 @@ const PedalPlacement = struct {
     base: [3]f32,
     size: [3]f32,
 };
+
+fn modeSwitchCenter(placement: PedalPlacement) [3]f32 {
+    return .{
+        placement.base[0],
+        placement.base[1] + placement.size[1] + 0.29,
+        placement.base[2] - placement.size[2] * 0.01,
+    };
+}
 
 fn pedalPlacement(rig: *const demo.Rig, pedal_index: usize) ?PedalPlacement {
     if (pedal_index >= rig.pedals.len) return null;
@@ -437,7 +474,14 @@ fn addComboAmplifier(mesh: *Mesh) !void {
     try addBox(mesh, .{ center[0] + size[0] * 0.34, floor_top - 0.035, center[2] }, .{ 0.46 * scale_x, 0.21 * scale_y, 0.62 * scale_z }, materials.rubber);
 }
 
-fn addPedal(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32, enabled: bool) !void {
+fn addPedal(
+    mesh: *Mesh,
+    pedal: demo.Pedal,
+    base: [3]f32,
+    size: [3]f32,
+    enabled: bool,
+    mode: ThreePosition,
+) !void {
     const body_material = accentMaterial(pedal.accent);
     if (pedal.presentation == .open) {
         const tray_height = size[1] * 0.42;
@@ -448,9 +492,40 @@ fn addPedal(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32, enabled:
     } else {
         try addBeveledBox(mesh, .{ base[0], base[1] + size[1] * 0.5, base[2] }, size, 0.10, body_material);
         try addControls(mesh, pedal, base, size);
+        if (pedal.mode_switch != null) try addThreeWayToggle(mesh, base, size, mode);
         try addFootswitches(mesh, pedal, base, size, enabled);
     }
     try addPorts(mesh, pedal, base, size);
+}
+
+fn addThreeWayToggle(
+    mesh: *Mesh,
+    base: [3]f32,
+    size: [3]f32,
+    mode: ThreePosition,
+) !void {
+    const top = base[1] + size[1];
+    const origin = [3]f32{ base[0], top, base[2] - size[2] * 0.01 };
+
+    // Hex nut, raised threaded collar, and reflective washer remain stationary.
+    try addCylinderSegments(mesh, .{ origin[0], top + 0.035, origin[2] }, 0.145, 0.070, materials.polished_chrome, .y, 6);
+    try addIndicatorWasher(mesh, .{ origin[0], top + 0.070, origin[2] }, 0.070, 0.126);
+    try addCylinder(mesh, .{ origin[0], top + 0.105, origin[2] }, 0.073, 0.110, materials.chrome, .y);
+
+    const depth_tilt: f32 = switch (mode) {
+        .low => 0.58,
+        .middle => 0.0,
+        .high => -0.58,
+    };
+    const direction = normalized3(.{ 0, 0.82, depth_tilt });
+    const lever_start = [3]f32{ origin[0], top + 0.125, origin[2] };
+    const lever_length: f32 = 0.54;
+    const center = [3]f32{
+        lever_start[0] + direction[0] * lever_length * 0.5,
+        lever_start[1] + direction[1] * lever_length * 0.5,
+        lever_start[2] + direction[2] * lever_length * 0.5,
+    };
+    try addOrientedCylinder(mesh, center, direction, 0.052, lever_length, materials.polished_chrome, 32);
 }
 
 fn addOpenLid(mesh: *Mesh, base: [3]f32, size: [3]f32, material: Material) !void {
@@ -865,6 +940,50 @@ fn addCylinderSegments(mesh: *Mesh, center: [3]f32, radius: f32, length: f32, ma
     }
 }
 
+fn addOrientedCylinder(
+    mesh: *Mesh,
+    center: [3]f32,
+    direction_value: [3]f32,
+    radius: f32,
+    length: f32,
+    material: Material,
+    segments: usize,
+) !void {
+    const direction = normalized3(direction_value);
+    const tangent = normalized3(cross3(direction, .{ 1, 0, 0 }));
+    const bitangent = normalized3(cross3(direction, tangent));
+    const half_axis = [3]f32{
+        direction[0] * length * 0.5,
+        direction[1] * length * 0.5,
+        direction[2] * length * 0.5,
+    };
+    const lower_center = [3]f32{ center[0] - half_axis[0], center[1] - half_axis[1], center[2] - half_axis[2] };
+    const upper_center = [3]f32{ center[0] + half_axis[0], center[1] + half_axis[1], center[2] + half_axis[2] };
+    for (0..segments) |index| {
+        const angle0 = std.math.tau * @as(f32, @floatFromInt(index)) / @as(f32, @floatFromInt(segments));
+        const angle1 = std.math.tau * @as(f32, @floatFromInt(index + 1)) / @as(f32, @floatFromInt(segments));
+        const normal0 = normalized3(.{
+            tangent[0] * @cos(angle0) + bitangent[0] * @sin(angle0),
+            tangent[1] * @cos(angle0) + bitangent[1] * @sin(angle0),
+            tangent[2] * @cos(angle0) + bitangent[2] * @sin(angle0),
+        });
+        const normal1 = normalized3(.{
+            tangent[0] * @cos(angle1) + bitangent[0] * @sin(angle1),
+            tangent[1] * @cos(angle1) + bitangent[1] * @sin(angle1),
+            tangent[2] * @cos(angle1) + bitangent[2] * @sin(angle1),
+        });
+        const lower0 = [3]f32{ lower_center[0] + normal0[0] * radius, lower_center[1] + normal0[1] * radius, lower_center[2] + normal0[2] * radius };
+        const lower1 = [3]f32{ lower_center[0] + normal1[0] * radius, lower_center[1] + normal1[1] * radius, lower_center[2] + normal1[2] * radius };
+        const upper0 = [3]f32{ upper_center[0] + normal0[0] * radius, upper_center[1] + normal0[1] * radius, upper_center[2] + normal0[2] * radius };
+        const upper1 = [3]f32{ upper_center[0] + normal1[0] * radius, upper_center[1] + normal1[1] * radius, upper_center[2] + normal1[2] * radius };
+        try mesh.triangle(vertex(lower0, normal0, material), vertex(upper0, normal0, material), vertex(upper1, normal1, material));
+        try mesh.triangle(vertex(lower0, normal0, material), vertex(upper1, normal1, material), vertex(lower1, normal1, material));
+        try mesh.triangle(vertex(upper_center, direction, material), vertex(upper1, direction, material), vertex(upper0, direction, material));
+        const lower_normal = [3]f32{ -direction[0], -direction[1], -direction[2] };
+        try mesh.triangle(vertex(lower_center, lower_normal, material), vertex(lower0, lower_normal, material), vertex(lower1, lower_normal, material));
+    }
+}
+
 fn cylinderPoint(center: [3]f32, axis: Axis, axial: f32, radius: f32, angle: f32) [3]f32 {
     const radial = radialVector(axis, angle);
     const along = axisVector(axis, axial);
@@ -1098,4 +1217,17 @@ test "disabled first pedal keeps its LED geometry but removes emission" {
     const enabled = [_]bool{false};
     try build(&mesh, &demo.rig, .{ .pedal_enabled = &enabled });
     try std.testing.expectEqual(@as(f32, 0.0), mesh.emissiveLights()[4].intensity);
+}
+
+test "first pedal three-way toggle is picked at its projected position" {
+    const aspect: f32 = 1200.0 / 760.0;
+    const placement = pedalPlacement(&demo.rig, 0) orelse return error.MissingFirstPedal;
+    const projected = projectToWindow(
+        modeSwitchCenter(placement),
+        rig_camera,
+        aspect * studio_viewport.width / studio_viewport.height,
+    ) orelse return error.ToggleBehindCamera;
+    try std.testing.expect(hitTestPedalModeSwitch(projected, aspect, &demo.rig, 0));
+    try std.testing.expect(!hitTestPedalModeSwitch(.{ -0.95, 0.90 }, aspect, &demo.rig, 0));
+    try std.testing.expect(!hitTestPedalModeSwitch(projected, aspect, &demo.rig, 1));
 }
