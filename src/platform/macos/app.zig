@@ -9,6 +9,7 @@ const Class = *anyopaque;
 
 const Point = extern struct { x: f64, y: f64 };
 const Size = extern struct { width: f64, height: f64 };
+const GridSize = extern struct { width: usize, height: usize, depth: usize };
 const Rect = extern struct { origin: Point, size: Size };
 const ClearColor = extern struct { red: f64, green: f64, blue: f64, alpha: f64 };
 const Viewport = extern struct {
@@ -80,12 +81,42 @@ const RenderState = struct {
     fill_count: usize,
     equipment_buffer: Object,
     equipment_count: usize,
+    equipment_source_ptr: usize,
     equipment_lights: []const pedalboard_3d.EmissiveLight,
     mode: ContentMode,
     lighting_lab: LightingLabRenderState,
+    ray_tracing: ?RayTracingRenderState,
     interaction: ?Interaction,
     camera_transition: CameraTransition,
 };
+
+const RayTracingRenderState = struct {
+    compute_pipeline: Object,
+    composite_pipeline: Object,
+    acceleration_structure: Object,
+    accumulation_texture: Object = null,
+    texture_width: usize = 0,
+    texture_height: usize = 0,
+    sample_count: u32 = 0,
+    idle_started_at: f64,
+};
+
+const AccelerationStructureSizes = extern struct {
+    acceleration_structure_size: usize,
+    build_scratch_buffer_size: usize,
+    refit_scratch_buffer_size: usize,
+};
+
+const RayUniforms = extern struct {
+    camera_fov: [4]f32,
+    forward_aspect: [4]f32,
+    right_min_distance: [4]f32,
+    up_max_distance: [4]f32,
+    sample_dimensions: [4]u32,
+};
+
+const progressive_ao_idle_delay_seconds: f64 = 0.2;
+const progressive_ao_sample_limit: u32 = 24;
 
 const LightingLabRenderState = struct {
     pipeline: Object,
@@ -469,6 +500,126 @@ const shader_source =
     \\}
 ;
 
+const ray_tracing_shader_source =
+    \\#include <metal_stdlib>
+    \\#include <metal_raytracing>
+    \\using namespace metal;
+    \\using namespace metal::raytracing;
+    \\
+    \\struct PbrVertex {
+    \\    float4 position;
+    \\    float4 normal;
+    \\    float4 base_color;
+    \\    float4 material;
+    \\};
+    \\
+    \\struct RayUniforms {
+    \\    float4 camera_fov;
+    \\    float4 forward_aspect;
+    \\    float4 right_min_distance;
+    \\    float4 up_max_distance;
+    \\    uint4 sample_dimensions;
+    \\};
+    \\
+    \\uint hash_uint(uint value) {
+    \\    value ^= value >> 16;
+    \\    value *= 0x7feb352du;
+    \\    value ^= value >> 15;
+    \\    value *= 0x846ca68bu;
+    \\    return value ^ (value >> 16);
+    \\}
+    \\
+    \\float random_float(thread uint &state) {
+    \\    state = hash_uint(state);
+    \\    return float(state) * (1.0 / 4294967296.0);
+    \\}
+    \\
+    \\float3 cosine_hemisphere(float3 normal, thread uint &state) {
+    \\    float r1 = random_float(state);
+    \\    float r2 = random_float(state);
+    \\    float radius = sqrt(r1);
+    \\    float phi = 6.28318530718 * r2;
+    \\    float3 local = float3(radius * cos(phi), radius * sin(phi), sqrt(max(0.0, 1.0 - r1)));
+    \\    float3 helper = abs(normal.y) < 0.95 ? float3(0.0, 1.0, 0.0) : float3(1.0, 0.0, 0.0);
+    \\    float3 tangent = normalize(cross(helper, normal));
+    \\    float3 bitangent = cross(normal, tangent);
+    \\    return normalize(tangent * local.x + bitangent * local.y + normal * local.z);
+    \\}
+    \\
+    \\kernel void progressive_ao(
+    \\    const device PbrVertex *vertices [[buffer(0)]],
+    \\    primitive_acceleration_structure scene [[buffer(1)]],
+    \\    constant RayUniforms &uniforms [[buffer(2)]],
+    \\    texture2d<float, access::read_write> accumulation [[texture(0)]],
+    \\    uint2 gid [[thread_position_in_grid]]) {
+    \\    uint2 dimensions = uniforms.sample_dimensions.yz;
+    \\    if (gid.x >= dimensions.x || gid.y >= dimensions.y) return;
+    \\    uint seed = gid.x + gid.y * dimensions.x + uniforms.sample_dimensions.x * 0x9e3779b9u;
+    \\    float2 jitter = float2(random_float(seed), random_float(seed));
+    \\    float2 uv = (float2(gid) + jitter) / float2(dimensions);
+    \\    float2 screen = float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    \\    float tan_half_fov = uniforms.camera_fov.w;
+    \\    float3 direction = normalize(uniforms.forward_aspect.xyz +
+    \\        uniforms.right_min_distance.xyz * (screen.x * uniforms.forward_aspect.w * tan_half_fov) +
+    \\        uniforms.up_max_distance.xyz * (screen.y * tan_half_fov));
+    \\    ray primary_ray;
+    \\    primary_ray.origin = uniforms.camera_fov.xyz;
+    \\    primary_ray.direction = direction;
+    \\    primary_ray.min_distance = uniforms.right_min_distance.w;
+    \\    primary_ray.max_distance = 40.0;
+    \\    intersector<triangle_data> primary_intersector;
+    \\    auto hit = primary_intersector.intersect(primary_ray, scene);
+    \\    float visibility = 1.0;
+    \\    if (hit.type != intersection_type::none) {
+    \\        uint vertex_index = hit.primitive_id * 3;
+    \\        float2 bary = hit.triangle_barycentric_coord;
+    \\        float3 normal = normalize(vertices[vertex_index].normal.xyz * (1.0 - bary.x - bary.y) +
+    \\            vertices[vertex_index + 1].normal.xyz * bary.x + vertices[vertex_index + 2].normal.xyz * bary.y);
+    \\        if (dot(normal, direction) > 0.0) normal = -normal;
+    \\        float3 hit_position = primary_ray.origin + primary_ray.direction * hit.distance;
+    \\        ray ao_ray;
+    \\        ao_ray.origin = hit_position + normal * 0.006;
+    \\        ao_ray.direction = cosine_hemisphere(normal, seed);
+    \\        ao_ray.min_distance = 0.004;
+    \\        ao_ray.max_distance = uniforms.up_max_distance.w;
+    \\        intersector<triangle_data> ao_intersector;
+    \\        ao_intersector.accept_any_intersection(true);
+    \\        auto ao_hit = ao_intersector.intersect(ao_ray, scene);
+    \\        visibility = ao_hit.type == intersection_type::none ? 1.0 : 0.0;
+    \\    }
+    \\    uint sample_index = uniforms.sample_dimensions.x;
+    \\    float previous = sample_index == 0 ? visibility : accumulation.read(gid).r;
+    \\    float averaged = (previous * float(sample_index) + visibility) / float(sample_index + 1);
+    \\    accumulation.write(float4(averaged), gid);
+    \\}
+    \\
+    \\struct CompositeRasterData {
+    \\    float4 position [[position]];
+    \\    float2 uv;
+    \\};
+    \\
+    \\vertex CompositeRasterData ao_composite_vertex(uint vertex_id [[vertex_id]]) {
+    \\    const float2 positions[6] = {
+    \\        float2(-1.0, -1.0), float2(1.0, -1.0), float2(-1.0, 1.0),
+    \\        float2(-1.0, 1.0), float2(1.0, -1.0), float2(1.0, 1.0)
+    \\    };
+    \\    float2 position = positions[vertex_id];
+    \\    CompositeRasterData out;
+    \\    out.position = float4(position, 0.0, 1.0);
+    \\    out.uv = float2(position.x * 0.5 + 0.5, 0.5 - position.y * 0.5);
+    \\    return out;
+    \\}
+    \\
+    \\fragment float4 ao_composite_fragment(
+    \\    CompositeRasterData in [[stage_in]],
+    \\    texture2d<float> accumulation [[texture(0)]]) {
+    \\    constexpr sampler linear_sampler(coord::normalized, address::clamp_to_edge, filter::linear);
+    \\    float visibility = accumulation.sample(linear_sampler, in.uv).r;
+    \\    float opacity = saturate((1.0 - visibility) * 0.42);
+    \\    return float4(0.018, 0.022, 0.020, opacity);
+    \\}
+;
+
 pub fn run(options: Options) !void {
     const pool = try send0(Object, try classNamed("NSAutoreleasePool"), "new");
     defer send0(void, pool, "drain") catch {};
@@ -520,6 +671,19 @@ pub fn run(options: Options) !void {
         options.equipment_vertices.len * @sizeOf(lighting_lab.Vertex),
         0,
     );
+    const ray_tracing_state = if (options.mode == .pedalboard_3d and try supportsRayTracing(device))
+        createRayTracingRenderState(
+            device,
+            command_queue,
+            equipment_buffer,
+            options.equipment_vertices.len,
+            sample_count,
+        ) catch |err| fallback: {
+            std.log.warn("Progressive ray-traced AO unavailable, using raster fallback: {s}", .{@errorName(err)});
+            break :fallback null;
+        }
+    else
+        null;
     render_state = .{
         .device = device,
         .command_queue = command_queue,
@@ -530,9 +694,11 @@ pub fn run(options: Options) !void {
         .fill_count = options.fill_vertices.len,
         .equipment_buffer = equipment_buffer,
         .equipment_count = options.equipment_vertices.len,
+        .equipment_source_ptr = @intFromPtr(options.equipment_vertices.ptr),
         .equipment_lights = options.equipment_lights,
         .mode = options.mode,
         .lighting_lab = lab_render_state,
+        .ray_tracing = ray_tracing_state,
         .interaction = options.interaction,
         .camera_transition = .{
             .from = options.equipment_camera,
@@ -586,11 +752,21 @@ pub fn run(options: Options) !void {
     try send0(void, application, "run");
 }
 
+fn supportsRayTracing(device: Object) !bool {
+    const selector = sel_registerName("supportsRaytracing");
+    if (!try send1(bool, Selector, device, "respondsToSelector:", selector)) return false;
+    return send0(bool, device, "supportsRaytracing");
+}
+
 fn createLibrary(device: Object) !Object {
+    return createLibraryFromSource(device, shader_source);
+}
+
+fn createLibraryFromSource(device: Object, source: [*:0]const u8) !Object {
     var compile_error: Object = null;
     const Function = *const fn (Object, Selector, Object, Object, *Object) callconv(.c) Object;
     const function: Function = @ptrCast(&objc_msgSend);
-    const library = function(device, sel_registerName("newLibraryWithSource:options:error:"), try nsString(shader_source), null, &compile_error);
+    const library = function(device, sel_registerName("newLibraryWithSource:options:error:"), try nsString(source), null, &compile_error);
     if (library != null) return library;
     if (compile_error) |error_object| {
         const description = send0(Object, error_object, "localizedDescription") catch null;
@@ -681,6 +857,66 @@ fn createLightingLabRenderState(device: Object, library: Object, sample_count: u
     };
 }
 
+fn createRayTracingRenderState(
+    device: Object,
+    command_queue: Object,
+    equipment_buffer: Object,
+    equipment_count: usize,
+    sample_count: usize,
+) !RayTracingRenderState {
+    if (equipment_count < 3) return error.RayTracingGeometryMissing;
+    const library = try createLibraryFromSource(device, ray_tracing_shader_source);
+    const compute_function = try send1(Object, Object, library, "newFunctionWithName:", try nsString("progressive_ao"));
+    const compute_pipeline = try send2(Object, Object, Object, device, "newComputePipelineStateWithFunction:error:", compute_function, null);
+
+    const vertex_function = try send1(Object, Object, library, "newFunctionWithName:", try nsString("ao_composite_vertex"));
+    const fragment_function = try send1(Object, Object, library, "newFunctionWithName:", try nsString("ao_composite_fragment"));
+    const pipeline_descriptor = try send0(Object, try send0(Object, try classNamed("MTLRenderPipelineDescriptor"), "alloc"), "init");
+    try send1(void, usize, pipeline_descriptor, "setRasterSampleCount:", sample_count);
+    try send1(void, Object, pipeline_descriptor, "setVertexFunction:", vertex_function);
+    try send1(void, Object, pipeline_descriptor, "setFragmentFunction:", fragment_function);
+    const attachments = try send0(Object, pipeline_descriptor, "colorAttachments");
+    const color_attachment = try send1(Object, usize, attachments, "objectAtIndexedSubscript:", 0);
+    try send1(void, usize, color_attachment, "setPixelFormat:", 80);
+    try send1(void, bool, color_attachment, "setBlendingEnabled:", true);
+    try send1(void, usize, color_attachment, "setSourceRGBBlendFactor:", 4);
+    try send1(void, usize, color_attachment, "setDestinationRGBBlendFactor:", 5);
+    try send1(void, usize, pipeline_descriptor, "setDepthAttachmentPixelFormat:", 252);
+    const composite_pipeline = try send2(Object, Object, Object, device, "newRenderPipelineStateWithDescriptor:error:", pipeline_descriptor, null);
+
+    return .{
+        .compute_pipeline = compute_pipeline,
+        .composite_pipeline = composite_pipeline,
+        .acceleration_structure = try buildAccelerationStructure(device, command_queue, equipment_buffer, equipment_count),
+        .idle_started_at = CACurrentMediaTime(),
+    };
+}
+
+fn buildAccelerationStructure(device: Object, command_queue: Object, vertex_buffer: Object, vertex_count: usize) !Object {
+    const geometry_descriptor = try send0(Object, try classNamed("MTLAccelerationStructureTriangleGeometryDescriptor"), "descriptor");
+    try send1(void, Object, geometry_descriptor, "setVertexBuffer:", vertex_buffer);
+    try send1(void, usize, geometry_descriptor, "setVertexBufferOffset:", 0);
+    try send1(void, usize, geometry_descriptor, "setVertexStride:", @sizeOf(lighting_lab.Vertex));
+    try send1(void, usize, geometry_descriptor, "setTriangleCount:", vertex_count / 3);
+    try send1(void, bool, geometry_descriptor, "setOpaque:", true);
+
+    const geometry_descriptors = try send1(Object, Object, try classNamed("NSArray"), "arrayWithObject:", geometry_descriptor);
+    const acceleration_descriptor = try send0(Object, try classNamed("MTLPrimitiveAccelerationStructureDescriptor"), "descriptor");
+    try send1(void, Object, acceleration_descriptor, "setGeometryDescriptors:", geometry_descriptors);
+    const sizes = try send1(AccelerationStructureSizes, Object, device, "accelerationStructureSizesWithDescriptor:", acceleration_descriptor);
+    const acceleration_structure = try send1(Object, usize, device, "newAccelerationStructureWithSize:", sizes.acceleration_structure_size);
+    const scratch_buffer = try send2(Object, usize, usize, device, "newBufferWithLength:options:", sizes.build_scratch_buffer_size, 2 << 4);
+
+    const command_buffer = try send0(Object, command_queue, "commandBuffer");
+    const encoder = try send0(Object, command_buffer, "accelerationStructureCommandEncoder");
+    try send4(void, Object, Object, Object, usize, encoder, "buildAccelerationStructure:descriptor:scratchBuffer:scratchBufferOffset:", acceleration_structure, acceleration_descriptor, scratch_buffer, 0);
+    try send0(void, encoder, "endEncoding");
+    try send0(void, command_buffer, "commit");
+    try send0(void, command_buffer, "waitUntilCompleted");
+    try send0(void, scratch_buffer, "release");
+    return acceleration_structure;
+}
+
 fn preferredSampleCount(device: Object) !usize {
     if (try send1(bool, usize, device, "supportsTextureSampleCount:", 4)) return 4;
     if (try send1(bool, usize, device, "supportsTextureSampleCount:", 2)) return 2;
@@ -762,17 +998,33 @@ fn replaceGeometry(state: *RenderState, geometry: Geometry) !void {
     errdefer send0(void, new_line_buffer, "release") catch {};
     const new_fill_buffer = try createVertexBuffer(state.device, geometry.fill_vertices);
     errdefer send0(void, new_fill_buffer, "release") catch {};
-    const new_equipment_buffer = try createEquipmentVertexBuffer(state.device, geometry.equipment_vertices);
+    const equipment_source_ptr = @intFromPtr(geometry.equipment_vertices.ptr);
+    const equipment_changed = equipment_source_ptr != state.equipment_source_ptr or geometry.equipment_vertices.len != state.equipment_count;
+    var new_equipment_buffer = state.equipment_buffer;
+    var new_acceleration_structure: Object = null;
+    if (equipment_changed) {
+        new_equipment_buffer = try createEquipmentVertexBuffer(state.device, geometry.equipment_vertices);
+        errdefer send0(void, new_equipment_buffer, "release") catch {};
+        if (state.ray_tracing != null) {
+            new_acceleration_structure = try buildAccelerationStructure(
+                state.device,
+                state.command_queue,
+                new_equipment_buffer,
+                geometry.equipment_vertices.len,
+            );
+        }
+    }
 
     try send0(void, state.line_buffer, "release");
     try send0(void, state.fill_buffer, "release");
-    try send0(void, state.equipment_buffer, "release");
+    if (equipment_changed) try send0(void, state.equipment_buffer, "release");
     state.line_buffer = new_line_buffer;
     state.fill_buffer = new_fill_buffer;
     state.equipment_buffer = new_equipment_buffer;
     state.line_count = geometry.line_vertices.len;
     state.fill_count = geometry.fill_vertices.len;
     state.equipment_count = geometry.equipment_vertices.len;
+    state.equipment_source_ptr = equipment_source_ptr;
     state.equipment_lights = geometry.equipment_lights;
     state.mode = geometry.mode;
     const current_camera = cameraAt(&state.camera_transition, CACurrentMediaTime());
@@ -782,6 +1034,14 @@ fn replaceGeometry(state: *RenderState, geometry: Geometry) !void {
         .started_at = CACurrentMediaTime(),
         .duration = if (cameraPoseEqual(current_camera, geometry.equipment_camera)) 0 else 2.8,
     };
+    if (state.ray_tracing) |*ray_tracing| {
+        if (new_acceleration_structure != null) {
+            try send0(void, ray_tracing.acceleration_structure, "release");
+            ray_tracing.acceleration_structure = new_acceleration_structure;
+        }
+        ray_tracing.sample_count = 0;
+        ray_tracing.idle_started_at = state.camera_transition.started_at + state.camera_transition.duration;
+    }
 }
 
 fn createVertexBuffer(device: Object, vertices: []const wireframe.Vertex) !Object {
@@ -813,7 +1073,10 @@ fn createEquipmentVertexBuffer(device: Object, vertices: []const lighting_lab.Ve
 }
 
 fn draw(view: Object) !void {
-    const state = render_state orelse return;
+    if (render_state) |*state| try drawState(view, state);
+}
+
+fn drawState(view: Object, state: *RenderState) !void {
     const descriptor = try send0(Object, view, "currentRenderPassDescriptor");
     if (descriptor == null) return;
     const drawable = try send0(Object, view, "currentDrawable");
@@ -848,28 +1111,34 @@ fn draw(view: Object) !void {
         .z_far = 1,
     };
     const lab_uniforms = lightingUniforms(@floatCast(three_d_viewport.width / three_d_viewport.height));
+    const now = CACurrentMediaTime();
+    const pedalboard_camera = cameraAt(&state.camera_transition, now);
     const pedalboard_uniforms = pedalboardUniforms(
         @floatCast(pedalboard_viewport.width / pedalboard_viewport.height),
         state.equipment_lights,
-        cameraAt(&state.camera_transition, CACurrentMediaTime()),
+        pedalboard_camera,
     );
 
     switch (state.mode) {
         .wireframe => {},
         .lighting_lab => try drawShadowPass(
             command_buffer,
-            &state,
+            state,
             &lab_uniforms,
             state.lighting_lab.vertex_buffer,
             state.lighting_lab.vertex_count,
         ),
         .pedalboard_3d => try drawShadowPass(
             command_buffer,
-            &state,
+            state,
             &pedalboard_uniforms,
             state.equipment_buffer,
             state.equipment_count,
         ),
+    }
+
+    if (state.mode == .pedalboard_3d) {
+        try encodeProgressiveAo(command_buffer, state, pedalboard_camera, pedalboard_viewport, now);
     }
 
     const encoder = try send1(Object, Object, command_buffer, "renderCommandEncoderWithDescriptor:", descriptor);
@@ -882,22 +1151,25 @@ fn draw(view: Object) !void {
         .lighting_lab => {
             try drawPbrPass(
                 encoder,
-                &state,
+                state,
                 &lab_uniforms,
                 three_d_viewport,
                 state.lighting_lab.vertex_buffer,
                 state.lighting_lab.vertex_count,
             );
-            try drawLightingComparisonPass(encoder, &state, &lab_uniforms, layer_viewport);
+            try drawLightingComparisonPass(encoder, state, &lab_uniforms, layer_viewport);
         },
-        .pedalboard_3d => try drawPbrPass(
-            encoder,
-            &state,
-            &pedalboard_uniforms,
-            pedalboard_viewport,
-            state.equipment_buffer,
-            state.equipment_count,
-        ),
+        .pedalboard_3d => {
+            try drawPbrPass(
+                encoder,
+                state,
+                &pedalboard_uniforms,
+                pedalboard_viewport,
+                state.equipment_buffer,
+                state.equipment_count,
+            );
+            try drawProgressiveAoComposite(encoder, state, pedalboard_viewport);
+        },
     }
 
     try send1(void, Object, encoder, "setDepthStencilState:", null);
@@ -915,6 +1187,92 @@ fn draw(view: Object) !void {
     try send0(void, encoder, "endEncoding");
     try send1(void, Object, command_buffer, "presentDrawable:", drawable);
     try send0(void, command_buffer, "commit");
+}
+
+fn encodeProgressiveAo(
+    command_buffer: Object,
+    state: *RenderState,
+    camera: pedalboard_3d.CameraPose,
+    viewport: Viewport,
+    now: f64,
+) !void {
+    const ray_tracing = if (state.ray_tracing) |*value| value else return;
+    const transition_end = state.camera_transition.started_at + state.camera_transition.duration;
+    if (now < transition_end) {
+        ray_tracing.sample_count = 0;
+        ray_tracing.idle_started_at = transition_end;
+        return;
+    }
+    if (now < ray_tracing.idle_started_at + progressive_ao_idle_delay_seconds) return;
+    if (ray_tracing.sample_count >= progressive_ao_sample_limit) return;
+
+    const texture_width: usize = @max(1, @as(usize, @intFromFloat(@floor(viewport.width * 0.5))));
+    const texture_height: usize = @max(1, @as(usize, @intFromFloat(@floor(viewport.height * 0.5))));
+    if (ray_tracing.accumulation_texture == null or
+        ray_tracing.texture_width != texture_width or ray_tracing.texture_height != texture_height)
+    {
+        if (ray_tracing.accumulation_texture != null) try send0(void, ray_tracing.accumulation_texture, "release");
+        const texture_descriptor = try send4(Object, usize, usize, usize, bool, try classNamed("MTLTextureDescriptor"), "texture2DDescriptorWithPixelFormat:width:height:mipmapped:", 55, texture_width, texture_height, false);
+        try send1(void, usize, texture_descriptor, "setUsage:", 1 | 2);
+        try send1(void, usize, texture_descriptor, "setStorageMode:", 2);
+        ray_tracing.accumulation_texture = try send1(Object, Object, state.device, "newTextureWithDescriptor:", texture_descriptor);
+        ray_tracing.texture_width = texture_width;
+        ray_tracing.texture_height = texture_height;
+        ray_tracing.sample_count = 0;
+    }
+
+    const uniforms = rayUniforms(camera, @floatCast(viewport.width / viewport.height), ray_tracing.sample_count, texture_width, texture_height);
+    const encoder = try send0(Object, command_buffer, "computeCommandEncoder");
+    try send1(void, Object, encoder, "setComputePipelineState:", ray_tracing.compute_pipeline);
+    try send3(void, Object, usize, usize, encoder, "setBuffer:offset:atIndex:", state.equipment_buffer, 0, 0);
+    try send2(void, Object, usize, encoder, "setAccelerationStructure:atBufferIndex:", ray_tracing.acceleration_structure, 1);
+    try send3(void, *const anyopaque, usize, usize, encoder, "setBytes:length:atIndex:", @ptrCast(&uniforms), @sizeOf(RayUniforms), 2);
+    try send2(void, Object, usize, encoder, "setTexture:atIndex:", ray_tracing.accumulation_texture, 0);
+    try send2(void, GridSize, GridSize, encoder, "dispatchThreads:threadsPerThreadgroup:", .{
+        .width = texture_width,
+        .height = texture_height,
+        .depth = 1,
+    }, .{ .width = 8, .height = 8, .depth = 1 });
+    try send0(void, encoder, "endEncoding");
+    ray_tracing.sample_count += 1;
+}
+
+fn rayUniforms(
+    camera: pedalboard_3d.CameraPose,
+    aspect: f32,
+    sample_index: u32,
+    width: usize,
+    height: usize,
+) RayUniforms {
+    const forward = normalized(.{
+        camera.target[0] - camera.camera[0],
+        camera.target[1] - camera.camera[1],
+        camera.target[2] - camera.camera[2],
+    });
+    const right = normalized(cross(forward, .{ 0, 1, 0 }));
+    const up = cross(right, forward);
+    return .{
+        .camera_fov = .{
+            camera.camera[0],
+            camera.camera[1],
+            camera.camera[2],
+            @tan(camera.field_of_view_degrees * std.math.pi / 360.0),
+        },
+        .forward_aspect = .{ forward[0], forward[1], forward[2], aspect },
+        .right_min_distance = .{ right[0], right[1], right[2], 0.04 },
+        .up_max_distance = .{ up[0], up[1], up[2], 1.35 },
+        .sample_dimensions = .{ sample_index, @intCast(width), @intCast(height), progressive_ao_sample_limit },
+    };
+}
+
+fn drawProgressiveAoComposite(encoder: Object, state: *const RenderState, viewport: Viewport) !void {
+    const ray_tracing = state.ray_tracing orelse return;
+    if (ray_tracing.sample_count == 0 or ray_tracing.accumulation_texture == null) return;
+    try send1(void, Object, encoder, "setDepthStencilState:", null);
+    try send1(void, Object, encoder, "setRenderPipelineState:", ray_tracing.composite_pipeline);
+    try send1(void, Viewport, encoder, "setViewport:", viewport);
+    try send2(void, Object, usize, encoder, "setFragmentTexture:atIndex:", ray_tracing.accumulation_texture, 0);
+    try send3(void, usize, usize, usize, encoder, "drawPrimitives:vertexStart:vertexCount:", 3, 0, 6);
 }
 
 fn drawShadowPass(

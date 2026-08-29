@@ -29,3 +29,6 @@ zig build
 
 Project specifications are indexed in [`docs/specs/README.md`](docs/specs/README.md).
 
+## Web service
+
+The Next.js landing page and PostgreSQL-backed user accounts live in [`web`](web/README.md).
