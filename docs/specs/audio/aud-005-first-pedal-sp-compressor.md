@@ -5,21 +5,35 @@ Status: Implemented
 ## Summary
 
 The first pedal in the demo signal graph is an SP Compressor backed by the
-imported `SpCompressor_Mid.nam` capture. Its footswitch controls one canonical
-bypass state shared by the UI and audio runtime.
+imported Low, Mid, and High captures. Its footswitch and range selector control
+canonical states shared by the UI and audio runtime.
 
 ## Model mapping
 
 - Pedal zero MUST describe processor resource `nam.sp-compressor` and capture
   variant `mid`.
-- The development resource resolver MUST map that description to
-  `SpCompressor_Mid.nam`.
+- The development resource resolver MUST map the three selector positions to
+  `SpCompressor_Low.nam`, `SpCompressor_Mid.nam`, and
+  `SpCompressor_High.nam` respectively.
 - Studio MUST select the full eight-channel NAM submodel. It MUST NOT silently
   substitute the lightweight three-channel model.
-- `Low` and `High` MUST remain versioned alongside `Mid`, but they are not
-  selected until a discrete range-control interaction is specified.
+- `Mid` MUST be the initial position.
 - The initial visible rotary controls are `VOLUME` and `BLEND`. They describe
   the physical pedal but do not interpolate NAM captures in this milestone.
+
+## Range interaction
+
+- The pedal description MUST expose one `RANGE` switch with ordered positions
+  `LOW`, `MID`, and `HIGH` and front-to-back physical movement.
+- Clicking its projected metal toggle MUST cycle `LOW -> MID -> HIGH -> LOW`.
+- The lever MUST stand upright at `MID` and tilt approximately 21 degrees along
+  the pedal depth axis for `LOW` and `HIGH`; it MUST NOT rotate sideways.
+- The UI MUST display the requested position immediately.
+- Audio MUST fade the current compressor path to dry over 5 ms, select and reset
+  the requested full-quality model only after the wet mix reaches zero, then
+  fade the new path in over 5 ms.
+- Only one compressor NAM MUST be evaluated per audio block. Mode changes MUST
+  NOT transiently double neural inference cost on the real-time thread.
 
 ## Bypass interaction
 
@@ -40,7 +54,7 @@ bypass state shared by the UI and audio runtime.
 ## Signal chain
 
 ```text
-mono WAV -> SP Compressor Mid -> full amplifier NAM -> cabinet IR -> native output
+mono WAV -> SP Compressor [Low | Mid | High] -> full amplifier NAM -> cabinet IR -> native output
 ```
 
 ## Rights
@@ -51,10 +65,13 @@ redistribution rights are established.
 
 ## Verification
 
-- Unit tests cover canonical switch toggling and bounded bypass smoothing.
+- Unit tests cover canonical bypass toggling, three-position cycling, bounded
+  bypass smoothing, and dry-point mode transitions.
 - Picking the projected first footswitch changes its semantic state rather than
   editing render-only LED data.
 - Rebuilding the same mesh storage MUST still upload the new LED material and
   emissive-light list to the GPU.
+- Picking the projected range toggle MUST cycle all three captures and rebuild
+  its lever orientation.
 - The active full-quality pedal, amplifier, and cabinet chain MUST be benchmarked
   against the real-time duration of the development fixture.

@@ -11,9 +11,9 @@ Imported unchanged from `/Users/guillaume/Desktop/Sp Compressor.zip` on
 - Each container provides 3-channel and full 8-channel submodels.
 - Metadata names `andiguitar` as the modeler and TONE3000 as the trainer.
 
-`Mid` is the initial first-pedal capture because the demo compressor's
-sensitivity control starts near its midpoint. The three files are retained so
-that a later discrete range control can select them without replacing assets.
+`Mid` is the initial first-pedal capture. The pedal's three-position `RANGE`
+toggle selects `Low`, `Mid`, or `High` directly; its two rotary controls remain
+`VOLUME` and `BLEND`.
 
 The archive did not include a license. These files are suitable for local
 development but must not be redistributed publicly until their rights are

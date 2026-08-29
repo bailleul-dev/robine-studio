@@ -513,11 +513,11 @@ fn addThreeWayToggle(
     try addCylinder(mesh, .{ origin[0], top + 0.105, origin[2] }, 0.073, 0.110, materials.chrome, .y);
 
     const depth_tilt: f32 = switch (mode) {
-        .low => 0.58,
+        .low => 0.36,
         .middle => 0.0,
-        .high => -0.58,
+        .high => -0.36,
     };
-    const direction = normalized3(.{ 0, 0.82, depth_tilt });
+    const direction = normalized3(.{ 0, 0.94, depth_tilt });
     const lever_start = [3]f32{ origin[0], top + 0.125, origin[2] };
     const lever_length: f32 = 0.54;
     const center = [3]f32{
