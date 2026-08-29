@@ -3,7 +3,9 @@ pub const model = struct {
 };
 
 pub const audio = struct {
+    pub const nam = @import("audio/nam.zig");
     pub const processor = @import("audio/processor.zig");
+    pub const wav = @import("audio/wav.zig");
 };
 
 pub const ui = struct {
@@ -13,7 +15,9 @@ pub const ui = struct {
 };
 
 test {
+    _ = audio.nam;
     _ = audio.processor;
+    _ = audio.wav;
     _ = model.demo;
     _ = ui.lighting_lab;
     _ = ui.pedalboard_3d;

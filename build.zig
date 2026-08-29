@@ -27,6 +27,12 @@ pub fn build(b: *std.Build) void {
     });
     native_audio.addImport("audio_contract", platform_audio);
 
+    const audio_assets = b.createModule(.{
+        .root_source_file = b.path("resources/audio/dev_assets.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const platform = b.createModule(.{
         .root_source_file = b.path("src/platform/macos/app.zig"),
         .target = target,
@@ -41,6 +47,9 @@ pub fn build(b: *std.Build) void {
     });
     studio_module.addImport("robine", robine);
     studio_module.addImport("platform", platform);
+    studio_module.addImport("audio_contract", platform_audio);
+    studio_module.addImport("native_audio", native_audio);
+    studio_module.addImport("audio_assets", audio_assets);
 
     const studio = b.addExecutable(.{
         .name = "robine-studio",
@@ -51,6 +60,8 @@ pub fn build(b: *std.Build) void {
     studio.root_module.linkFramework("Metal", .{});
     studio.root_module.linkFramework("MetalKit", .{});
     studio.root_module.linkFramework("QuartzCore", .{});
+    studio.root_module.linkFramework("CoreAudio", .{});
+    studio.root_module.linkFramework("CoreFoundation", .{});
     studio.root_module.linkSystemLibrary("objc", .{});
     b.installArtifact(studio);
 

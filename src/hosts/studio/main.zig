@@ -1,6 +1,7 @@
 const robine = @import("robine");
 const platform = @import("platform");
 const std = @import("std");
+const studio_audio = @import("audio.zig");
 
 const Studio = struct {
     scene: robine.ui.wireframe.Scene = .{},
@@ -89,6 +90,11 @@ pub fn main() !void {
     var studio = Studio{};
     try robine.ui.pedalboard_3d.build(&studio.pedalboard_mesh, &robine.model.demo.rig);
     try studio.project();
+
+    var startup_player: studio_audio.StartupPlayer = undefined;
+    try startup_player.init(std.heap.page_allocator);
+    defer startup_player.deinit();
+
     try platform.run(.{
         .title = "Robine Studio — descriptive equipment renderer",
         .width = 1200,
