@@ -15,6 +15,7 @@ pub const EmissiveLight = struct {
 pub const ViewProfile = struct {
     camera: [3]f32,
     target: [3]f32,
+    field_of_view_degrees: f32,
     key_position: [3]f32,
     key_size: [2]f32,
     key_intensity: f32,
@@ -24,18 +25,47 @@ pub const ViewProfile = struct {
 };
 
 pub const studio_profile = ViewProfile{
-    .camera = .{ 0, 10.8, 4.8 },
-    .target = .{ 0, 0.52, 0.10 },
-    .key_position = .{ -9.0, 10.0, 6.5 },
-    .key_size = .{ 3.2, 9.0 },
-    .key_intensity = 520.0,
-    .exposure = 1.42,
-    .environment_strength = 0.88,
-    .fill_radiance = .{ 0.90, 1.20, 1.60 },
+    .camera = .{ 0, 12.5, 6.5 },
+    .target = .{ 0, 1.35, -2.7 },
+    .field_of_view_degrees = 41.0,
+    .key_position = .{ -8.25, 5.15, -3.35 },
+    .key_size = .{ 1.45, 1.85 },
+    .key_intensity = 285.0,
+    .exposure = 1.34,
+    .environment_strength = 0.72,
+    .fill_radiance = .{ 0.52, 0.78, 1.05 },
 };
 
+pub const CameraPose = struct {
+    camera: [3]f32,
+    target: [3]f32,
+    field_of_view_degrees: f32,
+};
+
+pub const rig_camera = CameraPose{
+    .camera = studio_profile.camera,
+    .target = studio_profile.target,
+    .field_of_view_degrees = studio_profile.field_of_view_degrees,
+};
+
+pub const amplifier_camera = CameraPose{
+    .camera = .{ 0, 1.85, -0.85 },
+    .target = .{ 0, 2.33, -5.55 },
+    .field_of_view_degrees = 52.0,
+};
+
+pub const studio_viewport = struct {
+    pub const left: f32 = 0.01;
+    pub const top: f32 = 0.08;
+    pub const width: f32 = 0.74;
+    pub const height: f32 = 0.36;
+};
+
+const combo_center = [3]f32{ 0, 2.33, -5.55 };
+const combo_size = [3]f32{ 7.20, 4.10, 1.78 };
+
 pub const Mesh = struct {
-    pub const max_vertices = 80_000;
+    pub const max_vertices = 100_000;
     pub const max_emissive_lights = 16;
 
     vertices: [max_vertices]Vertex = undefined,
@@ -79,6 +109,18 @@ const materials = struct {
     const rubber = Material{ .base_color = .{ 0.012, 0.015, 0.014 }, .roughness = 0.78, .metallic = 0.0 };
     const pcb = Material{ .base_color = .{ 0.025, 0.19, 0.105 }, .roughness = 0.38, .metallic = 0.08 };
     const pointer = Material{ .base_color = .{ 0.95, 0.67, 0.18 }, .roughness = 0.28, .metallic = 0.30 };
+    const amplifier_vinyl = Material{ .base_color = .{ 0.020, 0.024, 0.023 }, .roughness = 0.56, .metallic = 0.05 };
+    const amplifier_grille = Material{ .base_color = .{ 0.115, 0.105, 0.085 }, .roughness = 0.82, .metallic = 0.02 };
+    const amplifier_grille_thread = Material{ .base_color = .{ 0.055, 0.052, 0.045 }, .roughness = 0.88, .metallic = 0.01 };
+    const amplifier_panel = Material{ .base_color = .{ 0.39, 0.36, 0.28 }, .roughness = 0.25, .metallic = 0.68 };
+    const amplifier_piping = Material{ .base_color = .{ 0.76, 0.65, 0.41 }, .roughness = 0.31, .metallic = 0.38 };
+    const amplifier_badge = Material{ .base_color = .{ 0.84, 0.67, 0.30 }, .roughness = 0.20, .metallic = 0.82 };
+    const studio_wall = Material{ .base_color = .{ 0.105, 0.112, 0.105 }, .roughness = 0.91, .metallic = 0.01 };
+    const studio_wall_trim = Material{ .base_color = .{ 0.24, 0.19, 0.125 }, .roughness = 0.54, .metallic = 0.08 };
+    const acoustic_panel = Material{ .base_color = .{ 0.025, 0.042, 0.041 }, .roughness = 0.96, .metallic = 0.0 };
+    const acoustic_slats = Material{ .base_color = .{ 0.22, 0.095, 0.032 }, .roughness = 0.67, .metallic = 0.01 };
+    const lamp_warm = Material{ .base_color = .{ 1.0, 0.62, 0.25 }, .roughness = 0.18, .metallic = 0.0, .emissive = 5.2 };
+    const lamp_cool = Material{ .base_color = .{ 0.42, 0.72, 1.0 }, .roughness = 0.18, .metallic = 0.0, .emissive = 4.2 };
 };
 
 const Axis = enum { x, y, z };
@@ -91,6 +133,8 @@ const LatheRing = struct {
 pub fn build(mesh: *Mesh, rig: *const demo.Rig) !void {
     mesh.* = .{};
     try addPedalboard(mesh);
+    try addStudioRoom(mesh);
+    try addComboAmplifier(mesh);
 
     const millimetres_to_world: f32 = 0.022;
     const gap: f32 = 0.30;
@@ -108,10 +152,32 @@ pub fn build(mesh: *Mesh, rig: *const demo.Rig) !void {
     }
 }
 
+pub fn hitTestAmplifier(point: [2]f32, window_aspect: f32) bool {
+    const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
+    const half = [3]f32{ combo_size[0] * 0.5, combo_size[1] * 0.5, combo_size[2] * 0.5 };
+    var minimum = [2]f32{ std.math.inf(f32), std.math.inf(f32) };
+    var maximum = [2]f32{ -std.math.inf(f32), -std.math.inf(f32) };
+    for (0..8) |index| {
+        const corner = [3]f32{
+            combo_center[0] + (if (index & 1 == 0) -half[0] else half[0]),
+            combo_center[1] + (if (index & 2 == 0) -half[1] else half[1]),
+            combo_center[2] + (if (index & 4 == 0) -half[2] else half[2]),
+        };
+        const projected = projectToWindow(corner, rig_camera, viewport_aspect) orelse continue;
+        minimum[0] = @min(minimum[0], projected[0]);
+        minimum[1] = @min(minimum[1], projected[1]);
+        maximum[0] = @max(maximum[0], projected[0]);
+        maximum[1] = @max(maximum[1], projected[1]);
+    }
+    const padding: f32 = 0.018;
+    return point[0] >= minimum[0] - padding and point[0] <= maximum[0] + padding and
+        point[1] >= minimum[1] - padding and point[1] <= maximum[1] + padding;
+}
+
 fn addPedalboard(mesh: *Mesh) !void {
-    const floor_width: f32 = 19.2;
-    const floor_depth: f32 = 11.5;
-    const column_count: usize = 17;
+    const floor_width: f32 = 27.0;
+    const floor_depth: f32 = 18.0;
+    const column_count: usize = 24;
     const plank_length: f32 = 7.4;
     const groove: f32 = 0.055;
     const plank_width = (floor_width - groove * @as(f32, @floatFromInt(column_count - 1))) /
@@ -149,6 +215,144 @@ fn addPedalboard(mesh: *Mesh) !void {
             }, material);
         }
     }
+}
+
+fn addStudioRoom(mesh: *Mesh) !void {
+    const floor_top: f32 = 0.28;
+    const wall_height: f32 = 8.7;
+    const back_z: f32 = -8.92;
+    const side_x: f32 = 13.46;
+    const wall_center_y = floor_top + wall_height * 0.5;
+
+    try addBox(mesh, .{ 0, wall_center_y, back_z }, .{ 27.15, wall_height, 0.24 }, materials.studio_wall);
+    try addBox(mesh, .{ -side_x, wall_center_y, 0 }, .{ 0.24, wall_height, 18.0 }, materials.studio_wall);
+    try addBox(mesh, .{ side_x, wall_center_y, 0 }, .{ 0.24, wall_height, 18.0 }, materials.studio_wall);
+
+    try addBox(mesh, .{ 0, floor_top + 0.18, back_z + 0.15 }, .{ 27.0, 0.34, 0.16 }, materials.studio_wall_trim);
+    try addBox(mesh, .{ -side_x + 0.15, floor_top + 0.18, 0 }, .{ 0.16, 0.34, 17.8 }, materials.studio_wall_trim);
+    try addBox(mesh, .{ side_x - 0.15, floor_top + 0.18, 0 }, .{ 0.16, 0.34, 17.8 }, materials.studio_wall_trim);
+
+    try addAcousticPanel(mesh, -8.35, 4.25, back_z + 0.18, 2.75, 4.30);
+    try addAcousticPanel(mesh, 8.35, 4.25, back_z + 0.18, 2.75, 4.30);
+    try addAcousticPanel(mesh, -11.70, 4.75, back_z + 0.18, 1.60, 3.20);
+    try addAcousticPanel(mesh, 11.70, 4.75, back_z + 0.18, 1.60, 3.20);
+
+    try addStandingStudioLamp(mesh, .{ -8.25, floor_top, -3.55 }, true);
+    try addStandingStudioLamp(mesh, .{ 8.25, floor_top, -3.55 }, false);
+    try addWallSconce(mesh, .{ -4.90, 6.20, back_z + 0.19 });
+    try addWallSconce(mesh, .{ 4.90, 6.20, back_z + 0.19 });
+}
+
+fn addAcousticPanel(mesh: *Mesh, x: f32, y: f32, z: f32, width: f32, height: f32) !void {
+    try addBox(mesh, .{ x, y, z }, .{ width, height, 0.20 }, materials.acoustic_panel);
+    const slat_count: usize = 8;
+    for (0..slat_count) |index| {
+        const slat_x = x - width * 0.5 + (@as(f32, @floatFromInt(index)) + 0.5) * width /
+            @as(f32, @floatFromInt(slat_count));
+        try addBox(mesh, .{ slat_x, y, z + 0.125 }, .{ 0.075, height * 0.94, 0.055 }, materials.acoustic_slats);
+    }
+}
+
+fn addStandingStudioLamp(mesh: *Mesh, base: [3]f32, warm: bool) !void {
+    const frame = materials.black_metal;
+    try addCylinder(mesh, .{ base[0], base[1] + 0.075, base[2] }, 0.46, 0.15, frame, .y);
+    for (0..3) |index| {
+        const angle = std.math.tau * @as(f32, @floatFromInt(index)) / 3.0;
+        const direction = [3]f32{ @sin(angle), 0, -@cos(angle) };
+        const perpendicular = [3]f32{ @cos(angle), 0, @sin(angle) };
+        const center = [3]f32{
+            base[0] + direction[0] * 0.42,
+            base[1] + 0.14,
+            base[2] + direction[2] * 0.42,
+        };
+        try addOrientedBox(mesh, center, direction, perpendicular, 0.055, 0.56, 0.075, frame);
+    }
+    try addCylinder(mesh, .{ base[0], base[1] + 2.45, base[2] }, 0.075, 4.65, frame, .y);
+    try addCylinder(mesh, .{ base[0], base[1] + 4.68, base[2] }, 0.22, 0.20, materials.chrome, .y);
+
+    const head_y: f32 = base[1] + 5.15;
+    try addBeveledBox(mesh, .{ base[0], head_y, base[2] }, .{ 1.75, 2.15, 0.42 }, 0.075, frame);
+    const panel_material = if (warm) materials.lamp_warm else materials.lamp_cool;
+    try addBox(mesh, .{ base[0], head_y, base[2] + 0.235 }, .{ 1.43, 1.82, 0.075 }, panel_material);
+    try mesh.addEmissiveLight(.{
+        .position = .{ base[0], head_y, base[2] + 0.55 },
+        .radius = 8.5,
+        .color = if (warm) .{ 1.0, 0.55, 0.20 } else .{ 0.32, 0.64, 1.0 },
+        .intensity = if (warm) 3.6 else 3.0,
+    });
+}
+
+fn addWallSconce(mesh: *Mesh, center: [3]f32) !void {
+    try addCylinder(mesh, .{ center[0], center[1], center[2] - 0.04 }, 0.30, 0.16, materials.amplifier_piping, .z);
+    try addBox(mesh, .{ center[0], center[1] - 0.34, center[2] + 0.09 }, .{ 0.18, 0.74, 0.18 }, materials.amplifier_piping);
+    try addBeveledBox(mesh, .{ center[0], center[1] - 0.88, center[2] + 0.13 }, .{ 0.62, 0.88, 0.32 }, 0.07, materials.black_metal);
+    try addBox(mesh, .{ center[0], center[1] - 0.88, center[2] + 0.31 }, .{ 0.44, 0.66, 0.08 }, materials.lamp_warm);
+    try mesh.addEmissiveLight(.{
+        .position = .{ center[0], center[1] - 0.88, center[2] + 0.58 },
+        .radius = 6.0,
+        .color = .{ 1.0, 0.48, 0.16 },
+        .intensity = 2.4,
+    });
+}
+
+fn addComboAmplifier(mesh: *Mesh) !void {
+    const floor_top: f32 = 0.28;
+    const center = combo_center;
+    const size = combo_size;
+    const front_z = center[2] + size[2] * 0.5;
+    const scale_x = size[0] / 5.15;
+    const scale_y = size[1] / 3.0;
+    const scale_z = size[2] / 1.34;
+    const control_scale = @min(scale_x, scale_y);
+
+    try addBeveledBox(mesh, center, size, 0.18, materials.amplifier_vinyl);
+
+    const grille_center_y = floor_top + 1.22 * scale_y;
+    const grille_size = [3]f32{ size[0] - 0.50 * scale_x, 2.05 * scale_y, 0.075 * scale_z };
+    try addBox(mesh, .{ center[0], grille_center_y, front_z + 0.045 * scale_z }, grille_size, materials.amplifier_grille);
+
+    const speaker_z = front_z + 0.090 * scale_z;
+    try addCylinder(mesh, .{ center[0], grille_center_y - 0.05 * scale_y, speaker_z }, 0.80 * control_scale, 0.035 * scale_z, materials.rubber, .z);
+    try addCylinder(mesh, .{ center[0], grille_center_y - 0.05 * scale_y, speaker_z + 0.025 * scale_z }, 0.30 * control_scale, 0.026 * scale_z, materials.black_metal, .z);
+
+    const grille_left = center[0] - grille_size[0] * 0.5;
+    const grille_bottom = grille_center_y - grille_size[1] * 0.5;
+    for (0..18) |index| {
+        const x = grille_left + (@as(f32, @floatFromInt(index)) + 0.5) * grille_size[0] / 18.0;
+        try addBox(mesh, .{ x, grille_center_y, front_z + 0.120 * scale_z }, .{ 0.018 * scale_x, grille_size[1], 0.020 * scale_z }, materials.amplifier_grille_thread);
+    }
+    for (0..8) |index| {
+        const y = grille_bottom + (@as(f32, @floatFromInt(index)) + 0.5) * grille_size[1] / 8.0;
+        try addBox(mesh, .{ center[0], y, front_z + 0.126 * scale_z }, .{ grille_size[0], 0.014 * scale_y, 0.018 * scale_z }, materials.amplifier_grille_thread);
+    }
+
+    const piping_depth: f32 = 0.035 * scale_z;
+    const piping_z = front_z + 0.148 * scale_z;
+    try addBox(mesh, .{ center[0], grille_center_y + grille_size[1] * 0.5, piping_z }, .{ grille_size[0] + 0.10 * scale_x, 0.050 * scale_y, piping_depth }, materials.amplifier_piping);
+    try addBox(mesh, .{ center[0], grille_center_y - grille_size[1] * 0.5, piping_z }, .{ grille_size[0] + 0.10 * scale_x, 0.050 * scale_y, piping_depth }, materials.amplifier_piping);
+    try addBox(mesh, .{ grille_left, grille_center_y, piping_z }, .{ 0.050 * scale_x, grille_size[1], piping_depth }, materials.amplifier_piping);
+    try addBox(mesh, .{ -grille_left, grille_center_y, piping_z }, .{ 0.050 * scale_x, grille_size[1], piping_depth }, materials.amplifier_piping);
+
+    const panel_y = floor_top + size[1] - 0.34 * scale_y;
+    try addBox(mesh, .{ center[0], panel_y, front_z + 0.080 * scale_z }, .{ size[0] - 0.48 * scale_x, 0.43 * scale_y, 0.11 * scale_z }, materials.amplifier_panel);
+    try addBox(mesh, .{ center[0] - 1.82 * scale_x, panel_y, front_z + 0.150 * scale_z }, .{ 0.18 * scale_x, 0.24 * scale_y, 0.05 * scale_z }, materials.black_metal);
+    for (0..6) |index| {
+        const x = center[0] - 1.20 * scale_x + @as(f32, @floatFromInt(index)) * 0.47 * scale_x;
+        try addCylinder(mesh, .{ x, panel_y, front_z + 0.175 * scale_z }, 0.105 * control_scale, 0.105 * scale_z, materials.knob_plastic, .z);
+        try addBox(mesh, .{ x, panel_y + 0.070 * scale_y, front_z + 0.235 * scale_z }, .{ 0.018 * scale_x, 0.065 * scale_y, 0.018 * scale_z }, materials.knob_indicator);
+    }
+    try addCylinder(mesh, .{ center[0] + 1.77 * scale_x, panel_y, front_z + 0.175 * scale_z }, 0.115 * control_scale, 0.11 * scale_z, materials.chrome, .z);
+    try addCylinder(mesh, .{ center[0] + 1.77 * scale_x, panel_y, front_z + 0.245 * scale_z }, 0.065 * control_scale, 0.055 * scale_z, materials.rubber, .z);
+
+    try addBox(mesh, .{ center[0] - 1.55 * scale_x, grille_center_y + 0.49 * scale_y, piping_z + 0.035 * scale_z }, .{ 0.62 * scale_x, 0.18 * scale_y, 0.055 * scale_z }, materials.amplifier_badge);
+
+    const top_y = center[1] + size[1] * 0.5;
+    try addBox(mesh, .{ center[0] - 0.72 * scale_x, top_y + 0.11 * scale_y, center[2] }, .{ 0.18 * scale_x, 0.22 * scale_y, 0.38 * scale_z }, materials.chrome);
+    try addBox(mesh, .{ center[0] + 0.72 * scale_x, top_y + 0.11 * scale_y, center[2] }, .{ 0.18 * scale_x, 0.22 * scale_y, 0.38 * scale_z }, materials.chrome);
+    try addBeveledBox(mesh, .{ center[0], top_y + 0.28 * scale_y, center[2] }, .{ 1.55 * scale_x, 0.22 * scale_y, 0.34 * scale_z }, 0.075, materials.rubber);
+
+    try addBox(mesh, .{ center[0] - size[0] * 0.34, floor_top - 0.035, center[2] }, .{ 0.46 * scale_x, 0.21 * scale_y, 0.62 * scale_z }, materials.rubber);
+    try addBox(mesh, .{ center[0] + size[0] * 0.34, floor_top - 0.035, center[2] }, .{ 0.46 * scale_x, 0.21 * scale_y, 0.62 * scale_z }, materials.rubber);
 }
 
 fn addPedal(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void {
@@ -711,12 +915,47 @@ fn normalized3(value: [3]f32) [3]f32 {
     return .{ value[0] / length, value[1] / length, value[2] / length };
 }
 
+fn projectToWindow(point: [3]f32, pose: CameraPose, viewport_aspect: f32) ?[2]f32 {
+    const forward = normalized3(.{
+        pose.target[0] - pose.camera[0],
+        pose.target[1] - pose.camera[1],
+        pose.target[2] - pose.camera[2],
+    });
+    const right = normalized3(cross3(forward, .{ 0, 1, 0 }));
+    const camera_up = cross3(right, forward);
+    const relative = [3]f32{
+        point[0] - pose.camera[0],
+        point[1] - pose.camera[1],
+        point[2] - pose.camera[2],
+    };
+    const depth = dot3(relative, forward);
+    if (depth <= 0.01) return null;
+    const tangent = @tan(pose.field_of_view_degrees * std.math.pi / 360.0);
+    const ndc_x = dot3(relative, right) / (depth * tangent * viewport_aspect);
+    const ndc_y = dot3(relative, camera_up) / (depth * tangent);
+    const window_x = 2.0 * (studio_viewport.left + (ndc_x + 1.0) * 0.5 * studio_viewport.width) - 1.0;
+    const top_fraction = studio_viewport.top + (1.0 - ndc_y) * 0.5 * studio_viewport.height;
+    return .{ window_x, 1.0 - 2.0 * top_fraction };
+}
+
+fn cross3(a: [3]f32, b: [3]f32) [3]f32 {
+    return .{
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    };
+}
+
+fn dot3(a: [3]f32, b: [3]f32) f32 {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
 test "semantic pedalboard produces bounded 3D geometry" {
     var mesh = Mesh{};
     try build(&mesh, &demo.rig);
     try std.testing.expect(mesh.len > 30_000);
     try std.testing.expect(mesh.len < Mesh.max_vertices);
-    try std.testing.expectEqual(@as(usize, 7), mesh.emissiveLights().len);
+    try std.testing.expectEqual(@as(usize, 11), mesh.emissiveLights().len);
     try std.testing.expectEqual(@as(usize, 0), mesh.len % 3);
     for (mesh.items()) |item| {
         for (item.position) |value| try std.testing.expect(std.math.isFinite(value));
@@ -726,7 +965,7 @@ test "semantic pedalboard produces bounded 3D geometry" {
         try std.testing.expect(item.material[2] >= 0 and item.material[2] <= 16.0);
     }
     for (mesh.emissiveLights()) |light| {
-        try std.testing.expect(light.radius > 0 and light.radius <= 1.0);
+        try std.testing.expect(light.radius > 0 and light.radius <= 10.0);
         try std.testing.expect(light.intensity > 0 and light.intensity <= 4.0);
     }
 }
@@ -740,4 +979,10 @@ test "open presentation remains available outside the default rig" {
     var mesh = Mesh{};
     try build(&mesh, &rig);
     try std.testing.expect(mesh.len > 35_000);
+}
+
+test "combo amplifier projects to a clickable rig-view region" {
+    const projected_center = projectToWindow(combo_center, rig_camera, (1200.0 / 760.0) * studio_viewport.width / studio_viewport.height) orelse return error.ComboBehindCamera;
+    try std.testing.expect(hitTestAmplifier(projected_center, 1200.0 / 760.0));
+    try std.testing.expect(!hitTestAmplifier(.{ 0.90, -0.80 }, 1200.0 / 760.0));
 }

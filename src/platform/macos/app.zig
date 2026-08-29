@@ -43,6 +43,7 @@ pub const Options = struct {
     fill_vertices: []const wireframe.Vertex,
     equipment_vertices: []const lighting_lab.Vertex = &.{},
     equipment_lights: []const pedalboard_3d.EmissiveLight = &.{},
+    equipment_camera: pedalboard_3d.CameraPose = pedalboard_3d.rig_camera,
     mode: ContentMode = .wireframe,
     interaction: ?Interaction = null,
 };
@@ -52,13 +53,21 @@ pub const Geometry = struct {
     fill_vertices: []const wireframe.Vertex,
     equipment_vertices: []const lighting_lab.Vertex = &.{},
     equipment_lights: []const pedalboard_3d.EmissiveLight = &.{},
+    equipment_camera: pedalboard_3d.CameraPose = pedalboard_3d.rig_camera,
     mode: ContentMode = .wireframe,
 };
 
 pub const Interaction = struct {
     context: *anyopaque,
-    pointer_down: *const fn (context: *anyopaque, point: [2]f32) bool,
+    pointer_down: *const fn (context: *anyopaque, point: [2]f32, window_aspect: f32) bool,
     geometry: *const fn (context: *anyopaque) Geometry,
+};
+
+const CameraTransition = struct {
+    from: pedalboard_3d.CameraPose,
+    to: pedalboard_3d.CameraPose,
+    started_at: f64,
+    duration: f32,
 };
 
 const RenderState = struct {
@@ -75,6 +84,7 @@ const RenderState = struct {
     mode: ContentMode,
     lighting_lab: LightingLabRenderState,
     interaction: ?Interaction,
+    camera_transition: CameraTransition,
 };
 
 const LightingLabRenderState = struct {
@@ -516,6 +526,12 @@ pub fn run(options: Options) !void {
         .mode = options.mode,
         .lighting_lab = lab_render_state,
         .interaction = options.interaction,
+        .camera_transition = .{
+            .from = options.equipment_camera,
+            .to = options.equipment_camera,
+            .started_at = CACurrentMediaTime(),
+            .duration = 0,
+        },
     };
     defer render_state = null;
 
@@ -717,7 +733,8 @@ fn handlePointerDown(view: Object, event: Object) !void {
             @floatCast(local_point.x / bounds.size.width * 2.0 - 1.0),
             @floatCast(local_point.y / bounds.size.height * 2.0 - 1.0),
         };
-        if (!interaction.pointer_down(interaction.context, point)) return;
+        const window_aspect: f32 = @floatCast(bounds.size.width / bounds.size.height);
+        if (!interaction.pointer_down(interaction.context, point, window_aspect)) return;
         try replaceGeometry(state, interaction.geometry(interaction.context));
     }
 }
@@ -740,6 +757,13 @@ fn replaceGeometry(state: *RenderState, geometry: Geometry) !void {
     state.equipment_count = geometry.equipment_vertices.len;
     state.equipment_lights = geometry.equipment_lights;
     state.mode = geometry.mode;
+    const current_camera = cameraAt(&state.camera_transition, CACurrentMediaTime());
+    state.camera_transition = .{
+        .from = current_camera,
+        .to = geometry.equipment_camera,
+        .started_at = CACurrentMediaTime(),
+        .duration = if (cameraPoseEqual(current_camera, geometry.equipment_camera)) 0 else 2.8,
+    };
 }
 
 fn createVertexBuffer(device: Object, vertices: []const wireframe.Vertex) !Object {
@@ -809,6 +833,7 @@ fn draw(view: Object) !void {
     const pedalboard_uniforms = pedalboardUniforms(
         @floatCast(pedalboard_viewport.width / pedalboard_viewport.height),
         state.equipment_lights,
+        cameraAt(&state.camera_transition, CACurrentMediaTime()),
     );
 
     switch (state.mode) {
@@ -957,13 +982,13 @@ fn lightingUniforms(aspect: f32) PbrUniforms {
     };
 }
 
-fn pedalboardUniforms(aspect: f32, lights: []const pedalboard_3d.EmissiveLight) PbrUniforms {
+fn pedalboardUniforms(aspect: f32, lights: []const pedalboard_3d.EmissiveLight, camera_pose: pedalboard_3d.CameraPose) PbrUniforms {
     const profile = pedalboard_3d.studio_profile;
-    const camera = profile.camera;
-    const target = profile.target;
+    const camera = camera_pose.camera;
+    const target = camera_pose.target;
     const light = profile.key_position;
     const view = lookAt(camera, target, .{ 0, 1, 0 });
-    const projection = perspective(27.0 * std.math.pi / 180.0, aspect, 0.1, 40.0);
+    const projection = perspective(camera_pose.field_of_view_degrees * std.math.pi / 180.0, aspect, 0.1, 40.0);
     const light_view = lookAt(light, target, .{ 0, 1, 0 });
     const light_projection = perspective(84.0 * std.math.pi / 180.0, 1.0, 0.2, 30.0);
     var uniforms = PbrUniforms{
@@ -990,6 +1015,38 @@ fn pedalboardUniforms(aspect: f32, lights: []const pedalboard_3d.EmissiveLight) 
     }
     uniforms.emissive_light_count = @intCast(light_count);
     return uniforms;
+}
+
+fn cameraAt(transition: *const CameraTransition, now: f64) pedalboard_3d.CameraPose {
+    if (transition.duration <= 0) return transition.to;
+    const elapsed: f32 = @floatCast(now - transition.started_at);
+    const linear = std.math.clamp(elapsed / transition.duration, 0, 1);
+    const eased = linear * linear * linear * (linear * (linear * 6.0 - 15.0) + 10.0);
+    return .{
+        .camera = interpolate3(transition.from.camera, transition.to.camera, eased),
+        .target = interpolate3(transition.from.target, transition.to.target, eased),
+        .field_of_view_degrees = transition.from.field_of_view_degrees +
+            (transition.to.field_of_view_degrees - transition.from.field_of_view_degrees) * eased,
+    };
+}
+
+fn interpolate3(from: [3]f32, to: [3]f32, amount: f32) [3]f32 {
+    return .{
+        from[0] + (to[0] - from[0]) * amount,
+        from[1] + (to[1] - from[1]) * amount,
+        from[2] + (to[2] - from[2]) * amount,
+    };
+}
+
+fn cameraPoseEqual(a: pedalboard_3d.CameraPose, b: pedalboard_3d.CameraPose) bool {
+    const epsilon: f32 = 0.0001;
+    for (a.camera, b.camera) |a_value, b_value| {
+        if (@abs(a_value - b_value) > epsilon) return false;
+    }
+    for (a.target, b.target) |a_value, b_value| {
+        if (@abs(a_value - b_value) > epsilon) return false;
+    }
+    return @abs(a.field_of_view_degrees - b.field_of_view_degrees) <= epsilon;
 }
 
 fn perspective(field_of_view: f32, aspect: f32, near: f32, far: f32) [16]f32 {

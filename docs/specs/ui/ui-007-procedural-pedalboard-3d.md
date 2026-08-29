@@ -15,6 +15,9 @@ The initial projection contains:
 
 - A staggered parquet floor extending beyond the complete 3D viewport, assembled
   from long planks oriented along scene depth with narrow recessed grooves.
+- A basic combo amplifier placed behind the pedal row on the same floor. Its
+  cabinet, grille, speaker, piping, control panel, knobs, input, badge, handle,
+  and feet are procedural geometry with runtime materials.
 - Gently rounded enclosures sized from `PedalEnclosure.dimensions` in millimetres.
 - Layout spacing derived from physical width and bounded semantic gaps.
 - Pedals projected in signal order from right to left, matching physical
@@ -50,6 +53,7 @@ updates may split or instance this stream without changing the description model
 - Ports derive from surface and slot semantics.
 - Camera framing derives from solved board bounds rather than individual product
   coordinates.
+- The rig camera frames the pedal row and the more distant combo together.
 
 The initial procedural control patterns are placeholders for the richer mounting
 zones required by MOD-002. They MUST remain deterministic and data-driven while
@@ -73,6 +77,8 @@ that model is introduced.
 ## Acceptance criteria
 
 - The five-pedal demo rig renders as five 3D enclosures on one board.
+- A complete combo amplifier remains visible behind the pedals in the default
+  rig camera.
 - Staggered parquet planks cover the complete visible 3D background without
   exposing a black perimeter.
 - The double pedal is physically wider than a single pedal.

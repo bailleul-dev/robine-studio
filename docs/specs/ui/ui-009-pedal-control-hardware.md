@@ -42,5 +42,5 @@ indicator assembly and is not fused into the switch geometry.
 - Every demo footswitch exposes a hexagonal nut, convex collar, shaft, and cap.
 - Footswitch metal reflects both named studio strips at runtime.
 - Changing recipe dimensions does not require renderer-specific coordinates.
-- Generated geometry remains within the fixed 80,000-vertex pedalboard mesh
+- Generated geometry remains within the fixed 100,000-vertex studio-scene mesh
   capacity and allocates nothing during a frame.
