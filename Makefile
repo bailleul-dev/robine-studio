@@ -1,5 +1,6 @@
 ZIG ?= zig
-OPTIMIZE ?= ReleaseSafe
+OPTIMIZE ?= ReleaseFast
+TEST_OPTIMIZE ?= ReleaseSafe
 
 .DEFAULT_GOAL := release
 
@@ -12,7 +13,7 @@ run-release: release
 	open -n "zig-out/Robine Studio.app"
 
 test:
-	$(ZIG) build test -Doptimize=$(OPTIMIZE)
+	$(ZIG) build test -Doptimize=$(TEST_OPTIMIZE)
 
 audio-probe:
 	$(ZIG) build audio-probe -Doptimize=$(OPTIMIZE)

@@ -55,7 +55,7 @@ canonical states shared by the UI and audio runtime.
 ## Signal chain
 
 ```text
-mono WAV -> SP Compressor [Low | Mid | High] -> full amplifier NAM -> cabinet IR -> native output
+mono WAV -> SP Compressor [Low | Mid | High] -> King of Tone -> full amplifier NAM -> cabinet IR -> native output
 ```
 
 ## Rights

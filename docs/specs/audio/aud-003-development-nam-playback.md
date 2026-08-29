@@ -5,9 +5,10 @@ Status: Implemented
 ## Summary
 
 When Robine Studio starts, it plays the deterministic mono guitar fixture once
-through the initial compressor, Dumble NAM capture, cabinet response, and the
-default native output. This is a development path for validating the real audio
-stack before live input, routing controls, and plugin hosts are introduced.
+through the initial compressor, King of Tone, Dumble NAM capture, cabinet
+response, and the default native output. This is a development path for
+validating the real audio stack before live input, routing controls, and plugin
+hosts are introduced.
 
 ## Portable processing boundary
 
@@ -27,12 +28,12 @@ stack before live input, routing controls, and plugin hosts are introduced.
 ## Startup path
 
 1. Studio decodes the embedded mono PCM24 fixture.
-2. Studio loads and prewarms the full compressor and amplifier NAM submodels
-   outside the callback.
+2. Studio loads and prewarms the full compressor, King of Tone, and amplifier
+   NAM submodels outside the callback.
 3. The native standalone backend negotiates the model's 48 kHz sample rate.
 4. The callback consumes the fixture once, processes every frame through the
-   SP Compressor, full amplifier NAM, and cabinet convolver, and duplicates the
-   mono result to every native output channel.
+   SP Compressor, selected King of Tone capture, full amplifier NAM, and cabinet
+   convolver, and duplicates the mono result to every native output channel.
 5. Once the fixture ends, the callback flushes the cabinet tail and then emits
    silence until Studio closes.
 
@@ -54,7 +55,8 @@ stack before live input, routing controls, and plugin hosts are introduced.
 - WAV decoding verifies mono, 48 kHz PCM24 input.
 - The release application negotiates 48 kHz CoreAudio output and starts with a
   64-frame callback on the reference macOS machine.
-- The full eight-channel model and cabinet response complete in real time while
-  the Studio window remains interactive.
+- The full eight-channel compressor, King of Tone, and amplifier models plus
+  cabinet response complete in real time while the Studio window remains
+  interactive.
 - The NAM module compiles to Windows COFF and Linux ELF objects using Zig target
   selection alone.

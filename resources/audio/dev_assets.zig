@@ -21,6 +21,18 @@ pub const first_pedal_high_nam = @embedFile(
 /// Mid remains the deterministic benchmark default.
 pub const first_pedal_nam = first_pedal_mid_nam;
 
+pub const king_of_tone_orange_nam = @embedFile(
+    "models/nam/king-of-tone-clone/Ly Pedals - King of Tone Clone - OrangeChannel CLN Boost.nam",
+);
+
+pub const king_of_tone_red_nam = @embedFile(
+    "models/nam/king-of-tone-clone/Ly Pedals - King of Tone Clone - Red Channel OD.nam",
+);
+
+pub const king_of_tone_both_nam = @embedFile(
+    "models/nam/king-of-tone-clone/Ly Pedals - King of Tone Clone - Both Channels DST.nam",
+);
+
 /// Initial cabinet response. Position C is an opaque pack identifier: the
 /// source archive does not document its physical microphone placement.
 pub const default_cabinet_ir = @embedFile(

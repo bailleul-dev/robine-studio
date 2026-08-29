@@ -2,6 +2,13 @@ pub const Control = struct {
     role: []const u8,
     label: []const u8,
     normalized_value: f32,
+    interactive: bool = true,
+};
+
+pub const IndicatorColor = enum {
+    green,
+    amber,
+    red,
 };
 
 pub const PedalFormFactor = enum {
@@ -106,6 +113,7 @@ pub const Pedal = struct {
     accent: Accent,
     footswitch_count: u8 = 1,
     indicator_brightness: f32 = 1.0,
+    indicator_colors: []const IndicatorColor = &.{},
     processor: ?AudioProcessor = null,
     mode_switch: ?ThreeWaySwitch = null,
 };
@@ -165,12 +173,16 @@ const modulation_controls = [_]Control{
     .{ .role = "rate", .label = "RATE", .normalized_value = 0.74 },
 };
 
-const drive_controls = [_]Control{
-    .{ .role = "tone", .label = "TONE", .normalized_value = 0.42 },
-    .{ .role = "contour", .label = "CONTOUR", .normalized_value = 0.55 },
-    .{ .role = "volume", .label = "VOLUME", .normalized_value = 0.63 },
-    .{ .role = "gain", .label = "GAIN", .normalized_value = 0.78 },
+const king_of_tone_controls = [_]Control{
+    .{ .role = "orange.volume", .label = "VOLUME", .normalized_value = 0.62, .interactive = false },
+    .{ .role = "orange.drive", .label = "DRIVE", .normalized_value = 0.46, .interactive = false },
+    .{ .role = "orange.tone", .label = "TONE", .normalized_value = 0.52, .interactive = false },
+    .{ .role = "red.volume", .label = "VOLUME", .normalized_value = 0.58, .interactive = false },
+    .{ .role = "red.drive", .label = "DRIVE", .normalized_value = 0.72, .interactive = false },
+    .{ .role = "red.tone", .label = "TONE", .normalized_value = 0.55, .interactive = false },
 };
+
+const king_of_tone_indicator_colors = [_]IndicatorColor{ .amber, .red };
 
 const side_ports = [_]PedalPort{
     .{ .id = "audio.input", .role = .input, .surface = .right_side, .slot = .start },
@@ -227,14 +239,20 @@ const pedals = [_]Pedal{
         .indicator_brightness = 0.90,
     },
     .{
-        .role = "overdrive",
-        .name = "OVERDRIVE",
-        .controls = &drive_controls,
+        .role = "dual_overdrive",
+        .name = "KING OF TONE",
+        .controls = &king_of_tone_controls,
         .ports = &side_ports,
-        .enclosure = enclosures.single,
+        .enclosure = enclosures.double,
         .accent = .violet,
         .footswitch_count = 2,
         .indicator_brightness = 1.0,
+        .indicator_colors = &king_of_tone_indicator_colors,
+        .processor = .{
+            .format = .nam,
+            .resource_id = "nam.king-of-tone-clone",
+            .capture_variant = "both-channels-dst",
+        },
     },
 };
 
@@ -271,6 +289,13 @@ test "demo rig is connected semantically" {
     try std.testing.expectEqual(@as(u8, 2), rig.cabinet.speaker_count);
     try std.testing.expectEqualStrings("nam.sp-compressor", rig.pedals[0].processor.?.resource_id);
     try std.testing.expectEqualStrings("mid", rig.pedals[0].processor.?.capture_variant);
+    try std.testing.expectEqual(PedalFormFactor.double, rig.pedals[4].enclosure.form_factor);
+    try std.testing.expectEqualStrings("nam.king-of-tone-clone", rig.pedals[4].processor.?.resource_id);
+    try std.testing.expectEqualStrings("both-channels-dst", rig.pedals[4].processor.?.capture_variant);
+    try std.testing.expectEqual(@as(usize, 6), rig.pedals[4].controls.len);
+    for (rig.pedals[4].controls) |control| try std.testing.expect(!control.interactive);
+    try std.testing.expectEqual(IndicatorColor.amber, rig.pedals[4].indicator_colors[0]);
+    try std.testing.expectEqual(IndicatorColor.red, rig.pedals[4].indicator_colors[1]);
     try std.testing.expectEqualStrings("MID", rig.pedals[0].mode_switch.?.positions[1]);
     try std.testing.expectEqual(
         @import("../core/equipment_state.zig").ThreePosition.middle,

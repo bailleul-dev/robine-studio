@@ -40,7 +40,7 @@ response selected as the development default.
 ## Initial signal chain
 
 ```text
-mono WAV -> full eight-channel NAM -> Orange 2x12 V30 SM57 C -> native output
+mono WAV -> full compressor NAM -> full King of Tone NAM -> full amplifier NAM -> Orange 2x12 V30 SM57 C -> native output
 ```
 
 The default selection is for development only and is not a claim that position
@@ -50,7 +50,9 @@ The default selection is for development only and is not a claim that position
 
 - A deterministic unit test MUST compare partitioned convolution against a
   direct time-domain FIR across the entire output and fixed-latency prefix.
-- The full NAM and complete 24,000-tap cabinet response MUST complete faster
-  than real time in a release build on the reference Apple M1 machine.
+- The full compressor, King of Tone, and amplifier NAM chain plus complete
+  24,000-tap cabinet response MUST complete faster than real time in a release
+  build on the reference Apple M1 machine. The production DSP build uses
+  `ReleaseFast`; validation tests remain `ReleaseSafe`.
 - The convolver source MUST compile for the supported Windows and Linux Zig
   targets without platform DSP dependencies.

@@ -10,6 +10,8 @@ const Studio = struct {
     amplifier_focused: bool = false,
     first_pedal_enabled: robine.core.equipment_state.EquipmentSwitch = .init(true),
     first_pedal_mode: robine.core.equipment_state.EquipmentModeSwitch = .init(.middle),
+    king_orange_enabled: robine.core.equipment_state.EquipmentSwitch = .init(true),
+    king_red_enabled: robine.core.equipment_state.EquipmentSwitch = .init(true),
     equipment_revision: u64 = 0,
 
     fn project(self: *Studio) !void {
@@ -19,10 +21,22 @@ const Studio = struct {
     fn rebuildPedalboard(self: *Studio) !void {
         const enabled = [_]bool{self.first_pedal_enabled.isEnabled()};
         const modes = [_]robine.core.equipment_state.ThreePosition{self.first_pedal_mode.position()};
+        const footswitch_masks = [_]u8{
+            @intFromBool(self.first_pedal_enabled.isEnabled()),
+            1,
+            1,
+            3,
+            @as(u8, @intFromBool(self.king_orange_enabled.isEnabled())) |
+                (@as(u8, @intFromBool(self.king_red_enabled.isEnabled())) << 1),
+        };
         try robine.ui.pedalboard_3d.build(
             &self.pedalboard_mesh,
             &robine.model.demo.rig,
-            .{ .pedal_enabled = &enabled, .pedal_modes = &modes },
+            .{
+                .pedal_enabled = &enabled,
+                .pedal_modes = &modes,
+                .pedal_footswitch_masks = &footswitch_masks,
+            },
         );
         self.equipment_revision +%= 1;
     }
@@ -101,6 +115,30 @@ const Studio = struct {
             };
             return true;
         }
+        if (self.view == .rig and !self.amplifier_focused) {
+            inline for (0..2) |footswitch_index| {
+                if (robine.ui.pedalboard_3d.hitTestPedalFootswitch(
+                    point,
+                    window_aspect,
+                    &robine.model.demo.rig,
+                    4,
+                    footswitch_index,
+                )) {
+                    const state = if (footswitch_index == 0)
+                        &self.king_orange_enabled
+                    else
+                        &self.king_red_enabled;
+                    const previous = state.isEnabled();
+                    _ = state.toggle();
+                    self.rebuildPedalboard() catch |err| {
+                        state.setEnabled(previous);
+                        std.log.err("King of Tone projection failed after channel change: {s}", .{@errorName(err)});
+                        return false;
+                    };
+                    return true;
+                }
+            }
+        }
         if (self.view == .rig and !self.amplifier_focused and
             robine.ui.pedalboard_3d.hitTestAmplifier(point, window_aspect))
         {
@@ -146,6 +184,8 @@ pub fn main() !void {
         std.heap.page_allocator,
         &studio.first_pedal_enabled,
         &studio.first_pedal_mode,
+        &studio.king_orange_enabled,
+        &studio.king_red_enabled,
     );
     defer startup_player.deinit();
 

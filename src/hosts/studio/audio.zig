@@ -4,18 +4,49 @@ const native_audio = @import("native_audio");
 const robine = @import("robine");
 const std = @import("std");
 
+const KingOfToneMode = enum {
+    bypass,
+    orange,
+    red,
+    both,
+
+    fn fromSwitches(orange_enabled: bool, red_enabled: bool) KingOfToneMode {
+        if (orange_enabled and red_enabled) return .both;
+        if (orange_enabled) return .orange;
+        if (red_enabled) return .red;
+        return .bypass;
+    }
+
+    fn modelIndex(self: KingOfToneMode) ?usize {
+        return switch (self) {
+            .bypass => null,
+            .orange => 0,
+            .red => 1,
+            .both => 2,
+        };
+    }
+};
+
+const KingOfToneTransition = robine.audio.mode_switch.DiscreteTransition(KingOfToneMode);
+
 pub const StartupPlayer = struct {
     allocator: std.mem.Allocator,
     driver: native_audio.CoreAudioDriver = .{},
     source: robine.audio.wav.Audio,
     compressors: [3]robine.audio.nam.Model,
+    king_of_tone_models: [3]robine.audio.nam.Model,
     amplifier: robine.audio.nam.Model,
     cabinet: robine.audio.convolver.Convolver,
     compressor_enabled: *const robine.core.equipment_state.EquipmentSwitch,
     compressor_mode: *const robine.core.equipment_state.EquipmentModeSwitch,
+    king_orange_enabled: *const robine.core.equipment_state.EquipmentSwitch,
+    king_red_enabled: *const robine.core.equipment_state.EquipmentSwitch,
     compressor_bypass: robine.audio.bypass.Smoother,
     mode_transition: robine.audio.mode_switch.Transition,
+    king_of_tone_bypass: robine.audio.bypass.Smoother,
+    king_of_tone_transition: KingOfToneTransition,
     pedal_block: []f32,
+    king_of_tone_block: []f32,
     amplifier_block: []f32,
     opened: ?contract.OpenedSession = null,
     render_frame: usize = 0,
@@ -27,6 +58,8 @@ pub const StartupPlayer = struct {
         allocator: std.mem.Allocator,
         compressor_enabled: *const robine.core.equipment_state.EquipmentSwitch,
         compressor_mode: *const robine.core.equipment_state.EquipmentModeSwitch,
+        king_orange_enabled: *const robine.core.equipment_state.EquipmentSwitch,
+        king_red_enabled: *const robine.core.equipment_state.EquipmentSwitch,
     ) !void {
         self.* = undefined;
         self.allocator = allocator;
@@ -35,6 +68,8 @@ pub const StartupPlayer = struct {
         self.render_frame = 0;
         self.compressor_enabled = compressor_enabled;
         self.compressor_mode = compressor_mode;
+        self.king_orange_enabled = king_orange_enabled;
+        self.king_red_enabled = king_red_enabled;
 
         self.source = try robine.audio.wav.decode(allocator, assets.input_wav);
         errdefer self.source.deinit(allocator);
@@ -51,6 +86,18 @@ pub const StartupPlayer = struct {
             compressor.* = try robine.audio.nam.Model.loadQuality(allocator, model_bytes, .full);
             initialized_compressors += 1;
         }
+
+        const king_of_tone_assets = [3][]const u8{
+            assets.king_of_tone_orange_nam,
+            assets.king_of_tone_red_nam,
+            assets.king_of_tone_both_nam,
+        };
+        var initialized_king_models: usize = 0;
+        errdefer for (self.king_of_tone_models[0..initialized_king_models]) |*model| model.deinit();
+        for (&self.king_of_tone_models, king_of_tone_assets) |*model, model_bytes| {
+            model.* = try robine.audio.nam.Model.loadQuality(allocator, model_bytes, .full);
+            initialized_king_models += 1;
+        }
         self.amplifier = try robine.audio.nam.Model.loadQuality(allocator, assets.default_nam, .full);
         errdefer self.amplifier.deinit();
         if (@abs(self.amplifier.sample_rate - @as(f64, @floatFromInt(self.source.sample_rate))) > 0.5) {
@@ -61,12 +108,27 @@ pub const StartupPlayer = struct {
                 return error.SourceAndNamSampleRatesDiffer;
             }
         }
+        for (self.king_of_tone_models) |model| {
+            if (@abs(model.sample_rate - self.amplifier.sample_rate) > 0.5) {
+                return error.SourceAndNamSampleRatesDiffer;
+            }
+        }
         self.compressor_bypass = try .init(
             compressor_enabled.isEnabled(),
             self.amplifier.sample_rate,
             0.005,
         );
         self.mode_transition = .init(compressor_mode.position());
+        const initial_king_mode = KingOfToneMode.fromSwitches(
+            king_orange_enabled.isEnabled(),
+            king_red_enabled.isEnabled(),
+        );
+        self.king_of_tone_bypass = try .init(
+            initial_king_mode != .bypass,
+            self.amplifier.sample_rate,
+            0.005,
+        );
+        self.king_of_tone_transition = .init(initial_king_mode);
 
         var cabinet_ir = try robine.audio.wav.decode(allocator, assets.default_cabinet_ir);
         defer cabinet_ir.deinit(allocator);
@@ -105,16 +167,20 @@ pub const StartupPlayer = struct {
 
         self.pedal_block = try allocator.alloc(f32, opened.config.maximum_frames);
         errdefer allocator.free(self.pedal_block);
+        self.king_of_tone_block = try allocator.alloc(f32, opened.config.maximum_frames);
+        errdefer allocator.free(self.king_of_tone_block);
         self.amplifier_block = try allocator.alloc(f32, opened.config.maximum_frames);
         errdefer allocator.free(self.amplifier_block);
         for (&self.compressors) |*compressor| try compressor.prepareBlock(opened.config.maximum_frames);
+        for (&self.king_of_tone_models) |*model| try model.prepareBlock(opened.config.maximum_frames);
         try self.amplifier.prepareBlock(opened.config.maximum_frames);
         for (&self.compressors) |*compressor| compressor.prewarm(opened.config.maximum_frames);
+        for (&self.king_of_tone_models) |*model| model.prewarm(opened.config.maximum_frames);
         self.amplifier.prewarm(opened.config.maximum_frames);
         self.opened = opened;
         try opened.session.start();
         std.log.info(
-            "Playing development guitar through switchable SP Compressor, full amp NAM, and Orange 2x12 V30 / SM57 C: {d:.0} Hz, {d} output channels, {d} frames",
+            "Playing development guitar through SP Compressor, King of Tone, full amp NAM, and Orange 2x12 V30 / SM57 C: {d:.0} Hz, {d} output channels, {d} frames",
             .{ opened.config.sample_rate, opened.config.output_channels, opened.config.nominal_frames },
         );
     }
@@ -125,9 +191,11 @@ pub const StartupPlayer = struct {
             opened.session.close();
         }
         self.allocator.free(self.amplifier_block);
+        self.allocator.free(self.king_of_tone_block);
         self.allocator.free(self.pedal_block);
         self.cabinet.deinit();
         self.amplifier.deinit();
+        for (&self.king_of_tone_models) |*model| model.deinit();
         for (&self.compressors) |*compressor| compressor.deinit();
         self.source.deinit(self.allocator);
         self.* = undefined;
@@ -141,6 +209,11 @@ pub const StartupPlayer = struct {
         const compressor_enabled = self.compressor_enabled.isEnabled();
         const requested_mode = self.compressor_mode.position();
         const render_wet = self.mode_transition.wantsWet(compressor_enabled, requested_mode);
+        const requested_king_mode = KingOfToneMode.fromSwitches(
+            self.king_orange_enabled.isEnabled(),
+            self.king_red_enabled.isEnabled(),
+        );
+        const render_king_wet = self.king_of_tone_transition.wantsWet(requested_king_mode, .bypass);
         const active_frames = if (self.render_frame < source_frames)
             @min(cycle.frames, source_frames - self.render_frame)
         else
@@ -164,7 +237,29 @@ pub const StartupPlayer = struct {
             )) |new_mode| {
                 self.compressors[@intFromEnum(new_mode)].reset();
             }
-            self.amplifier.processBlock(pedal, self.amplifier_block[0..active_frames]);
+            const king_output = self.king_of_tone_block[0..active_frames];
+            const active_king_mode = self.king_of_tone_transition.activeState();
+            if (active_king_mode.modelIndex()) |model_index| {
+                self.king_of_tone_models[model_index].processBlock(pedal, king_output);
+            } else {
+                @memcpy(king_output, pedal);
+            }
+            for (king_output, pedal) |*wet_sample, dry_sample| {
+                wet_sample.* = self.king_of_tone_bypass.process(
+                    dry_sample,
+                    wet_sample.*,
+                    render_king_wet,
+                );
+            }
+            if (self.king_of_tone_transition.completeWhenDry(
+                requested_king_mode,
+                self.king_of_tone_bypass.wetMix(),
+            )) |new_mode| {
+                if (new_mode.modelIndex()) |model_index| {
+                    self.king_of_tone_models[model_index].reset();
+                }
+            }
+            self.amplifier.processBlock(king_output, self.amplifier_block[0..active_frames]);
         }
 
         for (0..cycle.frames) |frame| {

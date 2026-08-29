@@ -69,6 +69,9 @@ pub const BuildState = struct {
     pedal_enabled: []const bool = &.{},
     /// Optional per-pedal three-way selector state.
     pedal_modes: []const ThreePosition = &.{},
+    /// Optional per-pedal footswitch bit masks. Bit zero is the leftmost
+    /// footswitch. Missing entries inherit the pedal-wide enabled state.
+    pedal_footswitch_masks: []const u8 = &.{},
 };
 
 const combo_center = [3]f32{ 0, 2.33, -5.55 };
@@ -159,7 +162,11 @@ pub fn build(mesh: *Mesh, rig: *const demo.Rig, state: BuildState) !void {
             mode_switch.default_position
         else
             .middle;
-        try addPedal(mesh, pedal, placement.base, placement.size, enabled, mode);
+        const footswitch_mask: ?u8 = if (index < state.pedal_footswitch_masks.len)
+            state.pedal_footswitch_masks[index]
+        else
+            null;
+        try addPedal(mesh, pedal, placement.base, placement.size, enabled, mode, footswitch_mask);
     }
 }
 
@@ -482,6 +489,7 @@ fn addPedal(
     size: [3]f32,
     enabled: bool,
     mode: ThreePosition,
+    footswitch_mask: ?u8,
 ) !void {
     const body_material = accentMaterial(pedal.accent);
     if (pedal.presentation == .open) {
@@ -494,7 +502,7 @@ fn addPedal(
         try addBeveledBox(mesh, .{ base[0], base[1] + size[1] * 0.5, base[2] }, size, 0.10, body_material);
         try addControls(mesh, pedal, base, size);
         if (pedal.mode_switch != null) try addThreeWayToggle(mesh, base, size, mode);
-        try addFootswitches(mesh, pedal, base, size, enabled);
+        try addFootswitches(mesh, pedal, base, size, enabled, footswitch_mask);
     }
     try addPorts(mesh, pedal, base, size);
 }
@@ -552,36 +560,60 @@ fn addComponents(mesh: *Mesh, base: [3]f32, size: [3]f32, tray_height: f32) !voi
 fn addControls(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void {
     const count = pedal.controls.len;
     if (count == 0) return;
-    const columns: usize = if (pedal.enclosure.form_factor == .double) @min(count, 4) else @min(count, 2);
+    const columns: usize = if (pedal.enclosure.form_factor == .double and count == 6)
+        3
+    else if (pedal.enclosure.form_factor == .double)
+        @min(count, 4)
+    else
+        @min(count, 2);
     const rows = (count + columns - 1) / columns;
     const radius = @min(0.27, size[0] / (@as(f32, @floatFromInt(columns)) * 3.4));
     for (pedal.controls, 0..) |control, index| {
         const column = index % columns;
         const row = index / columns;
         const x = base[0] + size[0] * ((@as(f32, @floatFromInt(column)) + 0.5) / @as(f32, @floatFromInt(columns)) - 0.5) * 0.78;
-        const z = base[2] - size[2] * 0.25 + @as(f32, @floatFromInt(row)) * size[2] * 0.22 / @as(f32, @floatFromInt(@max(rows, 1)));
+        const row_fraction = if (rows <= 1)
+            @as(f32, 0)
+        else
+            @as(f32, @floatFromInt(row)) / @as(f32, @floatFromInt(rows - 1));
+        const z = base[2] + size[2] * (-0.30 + row_fraction * 0.25);
         const knob_base = base[1] + size[1];
         const angle = (-0.75 + control.normalized_value * 1.5) * std.math.pi;
         try addChickenHeadKnob(mesh, .{ x, knob_base, z }, radius, angle);
     }
 }
 
-fn addFootswitches(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32, enabled: bool) !void {
+fn addFootswitches(
+    mesh: *Mesh,
+    pedal: demo.Pedal,
+    base: [3]f32,
+    size: [3]f32,
+    enabled: bool,
+    footswitch_mask: ?u8,
+) !void {
     const count = @max(@as(usize, 1), @as(usize, pedal.footswitch_count));
-    const brightness = if (enabled) std.math.clamp(pedal.indicator_brightness, 0, 1) else 0;
     for (0..count) |index| {
+        const switch_enabled = if (footswitch_mask) |mask|
+            (mask & (@as(u8, 1) << @intCast(index))) != 0
+        else
+            enabled;
+        const brightness = if (switch_enabled) std.math.clamp(pedal.indicator_brightness, 0, 1) else 0;
+        const indicator_color = if (index < pedal.indicator_colors.len)
+            pedal.indicator_colors[index]
+        else
+            .green;
         const x = base[0] + size[0] * ((@as(f32, @floatFromInt(index)) + 1.0) / @as(f32, @floatFromInt(count + 1)) - 0.5) * 0.72;
         const z = base[2] + size[2] * 0.29;
         const top = base[1] + size[1];
         const led_z = z - size[2] * 0.16;
         try addFootswitchHardware(mesh, .{ x, top, z });
         try addIndicatorWasher(mesh, .{ x, top + 0.004, led_z }, 0.063, 0.112);
-        try addCylinder(mesh, .{ x, top + 0.072, led_z }, 0.060, 0.080, ledLensMaterial(brightness), .y);
-        try addCylinder(mesh, .{ x, top + 0.126, led_z }, 0.018, 0.024, ledCoreMaterial(brightness), .y);
+        try addCylinder(mesh, .{ x, top + 0.072, led_z }, 0.060, 0.080, ledLensMaterial(brightness, indicator_color), .y);
+        try addCylinder(mesh, .{ x, top + 0.126, led_z }, 0.018, 0.024, ledCoreMaterial(brightness, indicator_color), .y);
         try mesh.addEmissiveLight(.{
             .position = .{ x, top + 0.16, led_z },
             .radius = 0.62,
-            .color = .{ 0.012, 1.0, 0.075 },
+            .color = indicatorLightColor(indicator_color),
             .intensity = 1.55 * brightness,
         });
     }
@@ -1153,20 +1185,38 @@ fn vertex(position: [3]f32, normal: [3]f32, material: Material) Vertex {
     };
 }
 
-fn ledLensMaterial(brightness: f32) Material {
+fn indicatorLightColor(color: demo.IndicatorColor) [3]f32 {
+    return switch (color) {
+        .green => .{ 0.012, 1.0, 0.075 },
+        .amber => .{ 1.0, 0.34, 0.008 },
+        .red => .{ 1.0, 0.018, 0.006 },
+    };
+}
+
+fn ledLensMaterial(brightness: f32, color: demo.IndicatorColor) Material {
     const level = 0.08 + brightness * 0.92;
+    const light_color = indicatorLightColor(color);
     return .{
-        .base_color = .{ 0.003, 0.32 * level, 0.010 },
+        .base_color = .{
+            light_color[0] * 0.32 * level,
+            light_color[1] * 0.32 * level,
+            light_color[2] * 0.32 * level,
+        },
         .roughness = 0.09,
         .metallic = 0.02,
         .emissive = 1.8 * brightness,
     };
 }
 
-fn ledCoreMaterial(brightness: f32) Material {
+fn ledCoreMaterial(brightness: f32, color: demo.IndicatorColor) Material {
     const level = 0.05 + brightness * 0.95;
+    const light_color = indicatorLightColor(color);
     return .{
-        .base_color = .{ 0.006, 0.72 * level, 0.025 },
+        .base_color = .{
+            light_color[0] * 0.72 * level,
+            light_color[1] * 0.72 * level,
+            light_color[2] * 0.72 * level,
+        },
         .roughness = 0.05,
         .metallic = 0,
         .emissive = 4.6 * brightness,
@@ -1299,6 +1349,42 @@ test "disabled first pedal keeps its LED geometry but removes emission" {
     const enabled = [_]bool{false};
     try build(&mesh, &demo.rig, .{ .pedal_enabled = &enabled });
     try std.testing.expectEqual(@as(f32, 0.0), mesh.emissiveLights()[4].intensity);
+}
+
+test "dual pedal footswitch mask controls each LED independently" {
+    var mesh = Mesh{};
+    const masks = [_]u8{ 1, 1, 1, 3, 1 };
+    try build(&mesh, &demo.rig, .{ .pedal_footswitch_masks = &masks });
+    try std.testing.expect(mesh.emissiveLights()[9].intensity > 0);
+    try std.testing.expectEqual(@as(f32, 0.0), mesh.emissiveLights()[10].intensity);
+    try std.testing.expectEqual(@as([3]f32, .{ 1.0, 0.34, 0.008 }), mesh.emissiveLights()[9].color);
+    try std.testing.expectEqual(@as([3]f32, .{ 1.0, 0.018, 0.006 }), mesh.emissiveLights()[10].color);
+}
+
+test "both King of Tone footswitches are independently pickable" {
+    const aspect: f32 = 1200.0 / 760.0;
+    const placement = pedalPlacement(&demo.rig, 4) orelse return error.MissingKingOfTone;
+    for (0..2) |footswitch_index| {
+        const x = placement.base[0] + placement.size[0] *
+            ((@as(f32, @floatFromInt(footswitch_index)) + 1.0) / 3.0 - 0.5) * 0.72;
+        const center_world = [3]f32{
+            x,
+            placement.base[1] + placement.size[1] + 0.18,
+            placement.base[2] + placement.size[2] * 0.29,
+        };
+        const projected = projectToWindow(
+            center_world,
+            rig_camera,
+            aspect * studio_viewport.width / studio_viewport.height,
+        ) orelse return error.FootswitchBehindCamera;
+        try std.testing.expect(hitTestPedalFootswitch(
+            projected,
+            aspect,
+            &demo.rig,
+            4,
+            footswitch_index,
+        ));
+    }
 }
 
 test "first pedal three-way toggle is picked at its projected position" {
