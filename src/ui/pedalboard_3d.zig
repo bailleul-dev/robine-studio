@@ -28,7 +28,7 @@ pub const studio_profile = ViewProfile{
 };
 
 pub const Mesh = struct {
-    pub const max_vertices = 32_000;
+    pub const max_vertices = 64_000;
 
     vertices: [max_vertices]Vertex = undefined,
     len: usize = 0,
@@ -98,12 +98,12 @@ fn addPedal(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void {
     const body_material = accentMaterial(pedal.accent);
     if (pedal.presentation == .open) {
         const tray_height = size[1] * 0.42;
-        try addBeveledBox(mesh, .{ base[0], base[1] + tray_height * 0.5, base[2] }, .{ size[0], tray_height, size[2] }, 0.10, darkened(body_material, 0.55));
+        try addBeveledBox(mesh, .{ base[0], base[1] + tray_height * 0.5, base[2] }, .{ size[0], tray_height, size[2] }, 0.18, darkened(body_material, 0.55));
         try addBox(mesh, .{ base[0], base[1] + tray_height + 0.035, base[2] }, .{ size[0] * 0.78, 0.07, size[2] * 0.72 }, materials.pcb);
         try addOpenLid(mesh, base, size, body_material);
         try addComponents(mesh, base, size, tray_height);
     } else {
-        try addBeveledBox(mesh, .{ base[0], base[1] + size[1] * 0.5, base[2] }, size, 0.12, body_material);
+        try addBeveledBox(mesh, .{ base[0], base[1] + size[1] * 0.5, base[2] }, size, 0.22, body_material);
         try addControls(mesh, pedal, base, size);
         try addFootswitches(mesh, pedal, base, size);
         try addScrews(mesh, base, size);
@@ -206,41 +206,82 @@ fn addPorts(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void {
 }
 
 fn addBeveledBox(mesh: *Mesh, center: [3]f32, size: [3]f32, bevel: f32, material: Material) !void {
+    const ring_len = 36;
+    const fillet_segments: usize = if (bevel >= 0.10) 5 else 3;
     const half_x = size[0] * 0.5;
     const half_z = size[2] * 0.5;
     const y0 = center[1] - size[1] * 0.5;
     const y1 = center[1] + size[1] * 0.5;
     const lower_y = @min(y0 + bevel, y1);
     const upper_y = @max(y1 - bevel, y0);
-    const outer = chamferRing(center, half_x, half_z, @min(bevel, @min(half_x, half_z) * 0.45));
-    const inner = chamferRing(center, @max(half_x - bevel, 0.01), @max(half_z - bevel, 0.01), @min(bevel, @min(half_x, half_z) * 0.45));
+    const outer_radius = @min(bevel * 1.65, @min(half_x, half_z) * 0.45);
+    const outer = roundedRing(center, half_x, half_z, outer_radius);
 
-    for (0..8) |index| {
-        const next = (index + 1) % 8;
-        const outward = normalized3(.{ outer[index][0] - center[0], 0, outer[index][1] - center[2] });
-        try addQuad(
+    for (0..ring_len) |index| {
+        const next = (index + 1) % ring_len;
+        const normal = roundedRingNormal(center, half_x, half_z, outer_radius, outer[index]);
+        const next_normal = roundedRingNormal(center, half_x, half_z, outer_radius, outer[next]);
+        try addSmoothQuad(
             mesh,
             .{ outer[index][0], lower_y, outer[index][1] },
             .{ outer[next][0], lower_y, outer[next][1] },
             .{ outer[next][0], upper_y, outer[next][1] },
             .{ outer[index][0], upper_y, outer[index][1] },
-            outward,
-            material,
-        );
-        const bevel_normal = normalized3(.{ outward[0], 0.72, outward[2] });
-        try addQuad(
-            mesh,
-            .{ outer[index][0], upper_y, outer[index][1] },
-            .{ outer[next][0], upper_y, outer[next][1] },
-            .{ inner[next][0], y1, inner[next][1] },
-            .{ inner[index][0], y1, inner[index][1] },
-            bevel_normal,
+            normal,
+            next_normal,
+            next_normal,
+            normal,
             material,
         );
     }
+
+    for (0..fillet_segments) |segment| {
+        const angle0 = @as(f32, @floatFromInt(segment)) * std.math.pi * 0.5 / @as(f32, @floatFromInt(fillet_segments));
+        const angle1 = @as(f32, @floatFromInt(segment + 1)) * std.math.pi * 0.5 / @as(f32, @floatFromInt(fillet_segments));
+        const inset0 = bevel * (1.0 - @cos(angle0));
+        const inset1 = bevel * (1.0 - @cos(angle1));
+        const half_x0 = @max(half_x - inset0, 0.01);
+        const half_z0 = @max(half_z - inset0, 0.01);
+        const half_x1 = @max(half_x - inset1, 0.01);
+        const half_z1 = @max(half_z - inset1, 0.01);
+        const radius0 = @min(@max(outer_radius - inset0 * 0.45, 0.018), @min(half_x0, half_z0) * 0.45);
+        const radius1 = @min(@max(outer_radius - inset1 * 0.45, 0.018), @min(half_x1, half_z1) * 0.45);
+        const ring0 = roundedRing(center, half_x0, half_z0, radius0);
+        const ring1 = roundedRing(center, half_x1, half_z1, radius1);
+        const y_ring0 = upper_y + @sin(angle0) * bevel;
+        const y_ring1 = upper_y + @sin(angle1) * bevel;
+        for (0..ring_len) |index| {
+            const next = (index + 1) % ring_len;
+            const outward00 = roundedRingNormal(center, half_x0, half_z0, radius0, ring0[index]);
+            const outward01 = roundedRingNormal(center, half_x0, half_z0, radius0, ring0[next]);
+            const outward10 = roundedRingNormal(center, half_x1, half_z1, radius1, ring1[index]);
+            const outward11 = roundedRingNormal(center, half_x1, half_z1, radius1, ring1[next]);
+            const normal00 = [3]f32{ outward00[0] * @cos(angle0), @sin(angle0), outward00[2] * @cos(angle0) };
+            const normal01 = [3]f32{ outward01[0] * @cos(angle0), @sin(angle0), outward01[2] * @cos(angle0) };
+            const normal10 = [3]f32{ outward10[0] * @cos(angle1), @sin(angle1), outward10[2] * @cos(angle1) };
+            const normal11 = [3]f32{ outward11[0] * @cos(angle1), @sin(angle1), outward11[2] * @cos(angle1) };
+            try addSmoothQuad(
+                mesh,
+                .{ ring0[index][0], y_ring0, ring0[index][1] },
+                .{ ring0[next][0], y_ring0, ring0[next][1] },
+                .{ ring1[next][0], y_ring1, ring1[next][1] },
+                .{ ring1[index][0], y_ring1, ring1[index][1] },
+                normal00,
+                normal01,
+                normal11,
+                normal10,
+                material,
+            );
+        }
+    }
+
+    const inner_half_x = @max(half_x - bevel, 0.01);
+    const inner_half_z = @max(half_z - bevel, 0.01);
+    const inner_radius = @min(@max(outer_radius - bevel * 0.45, 0.018), @min(inner_half_x, inner_half_z) * 0.45);
+    const inner = roundedRing(center, inner_half_x, inner_half_z, inner_radius);
     const top_center = [3]f32{ center[0], y1, center[2] };
-    for (0..8) |index| {
-        const next = (index + 1) % 8;
+    for (0..ring_len) |index| {
+        const next = (index + 1) % ring_len;
         try mesh.triangle(
             vertex(top_center, .{ 0, 1, 0 }, material),
             vertex(.{ inner[next][0], y1, inner[next][1] }, .{ 0, 1, 0 }, material),
@@ -249,21 +290,36 @@ fn addBeveledBox(mesh: *Mesh, center: [3]f32, size: [3]f32, bevel: f32, material
     }
 }
 
-fn chamferRing(center: [3]f32, half_x: f32, half_z: f32, chamfer: f32) [8][2]f32 {
-    return .{
-        .{ center[0] - half_x + chamfer, center[2] - half_z },
-        .{ center[0] + half_x - chamfer, center[2] - half_z },
-        .{ center[0] + half_x, center[2] - half_z + chamfer },
-        .{ center[0] + half_x, center[2] + half_z - chamfer },
-        .{ center[0] + half_x - chamfer, center[2] + half_z },
-        .{ center[0] - half_x + chamfer, center[2] + half_z },
-        .{ center[0] - half_x, center[2] + half_z - chamfer },
-        .{ center[0] - half_x, center[2] - half_z + chamfer },
-    };
+fn roundedRing(center: [3]f32, half_x: f32, half_z: f32, radius: f32) [36][2]f32 {
+    const segments_per_corner = 8;
+    var result: [36][2]f32 = undefined;
+    var cursor: usize = 0;
+    for (0..4) |corner| {
+        const corner_x: f32 = if (corner == 0 or corner == 3) half_x - radius else -half_x + radius;
+        const corner_z: f32 = if (corner == 0 or corner == 1) half_z - radius else -half_z + radius;
+        for (0..segments_per_corner + 1) |segment| {
+            const angle = @as(f32, @floatFromInt(corner)) * std.math.pi * 0.5 +
+                @as(f32, @floatFromInt(segment)) * std.math.pi * 0.5 / segments_per_corner;
+            result[cursor] = .{
+                center[0] + corner_x + @cos(angle) * radius,
+                center[2] + corner_z + @sin(angle) * radius,
+            };
+            cursor += 1;
+        }
+    }
+    return result;
+}
+
+fn roundedRingNormal(center: [3]f32, half_x: f32, half_z: f32, radius: f32, point: [2]f32) [3]f32 {
+    const local_x = point[0] - center[0];
+    const local_z = point[1] - center[2];
+    const corner_x: f32 = if (local_x >= 0) half_x - radius else -half_x + radius;
+    const corner_z: f32 = if (local_z >= 0) half_z - radius else -half_z + radius;
+    return normalized3(.{ local_x - corner_x, 0, local_z - corner_z });
 }
 
 fn addCylinder(mesh: *Mesh, center: [3]f32, radius: f32, length: f32, material: Material, axis: Axis) !void {
-    const segments = 24;
+    const segments = 48;
     for (0..segments) |index| {
         const a0 = std.math.tau * @as(f32, @floatFromInt(index)) / segments;
         const a1 = std.math.tau * @as(f32, @floatFromInt(index + 1)) / segments;
@@ -336,6 +392,22 @@ fn addQuad(mesh: *Mesh, a: [3]f32, b: [3]f32, c: [3]f32, d: [3]f32, normal: [3]f
     try mesh.triangle(vertex(a, normal, material), vertex(c, normal, material), vertex(d, normal, material));
 }
 
+fn addSmoothQuad(
+    mesh: *Mesh,
+    a: [3]f32,
+    b: [3]f32,
+    c: [3]f32,
+    d: [3]f32,
+    normal_a: [3]f32,
+    normal_b: [3]f32,
+    normal_c: [3]f32,
+    normal_d: [3]f32,
+    material: Material,
+) !void {
+    try mesh.triangle(vertex(a, normal_a, material), vertex(b, normal_b, material), vertex(c, normal_c, material));
+    try mesh.triangle(vertex(a, normal_a, material), vertex(c, normal_c, material), vertex(d, normal_d, material));
+}
+
 fn vertex(position: [3]f32, normal: [3]f32, material: Material) Vertex {
     return .{
         .position = .{ position[0], position[1], position[2], 1 },
@@ -354,8 +426,8 @@ fn accentMaterial(accent: demo.Accent) Material {
             .violet => .{ 0.28, 0.075, 0.32 },
             .coral => .{ 0.52, 0.055, 0.035 },
         },
-        .roughness = 0.29,
-        .metallic = 0.54,
+        .roughness = 0.16,
+        .metallic = 0.58,
     };
 }
 
@@ -375,7 +447,7 @@ fn normalized3(value: [3]f32) [3]f32 {
 test "semantic pedalboard produces bounded 3D geometry" {
     var mesh = Mesh{};
     try build(&mesh, &demo.rig);
-    try std.testing.expect(mesh.len > 4_000);
+    try std.testing.expect(mesh.len > 40_000);
     try std.testing.expect(mesh.len < Mesh.max_vertices);
     try std.testing.expectEqual(@as(usize, 0), mesh.len % 3);
     for (mesh.items()) |item| {
@@ -384,4 +456,15 @@ test "semantic pedalboard produces bounded 3D geometry" {
         try std.testing.expect(item.material[0] >= 0.04 and item.material[0] <= 1.0);
         try std.testing.expect(item.material[1] >= 0 and item.material[1] <= 1.0);
     }
+}
+
+test "open presentation remains available outside the default rig" {
+    var pedals: [5]demo.Pedal = undefined;
+    for (demo.rig.pedals, 0..) |pedal, index| pedals[index] = pedal;
+    pedals[1].presentation = .open;
+    var rig = demo.rig;
+    rig.pedals = &pedals;
+    var mesh = Mesh{};
+    try build(&mesh, &rig);
+    try std.testing.expect(mesh.len > 35_000);
 }

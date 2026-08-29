@@ -22,6 +22,8 @@ The initial projection contains:
   MOD-005 mounting data.
 - An open service presentation containing a tray, exposed PCB, components, and
   raised lid when `presentation` is `open`.
+- Rounded enclosure corners use subdivided arcs, while cylindrical controls,
+  sockets, fasteners, and switches use a high-detail radial profile.
 - Runtime metallic-roughness materials and cast shadows following UI-006.
 
 The current demo uses a single compiled triangle stream so the complete board and
@@ -64,7 +66,9 @@ that model is introduced.
 - The five-pedal demo rig renders as five 3D enclosures on one board.
 - The double pedal is physically wider than a single pedal.
 - Changing enclosure dimensions changes 3D size without changing renderer code.
-- The open pedal exposes its interior and raised lid from the same pedal state.
+- The default demo presents every pedal as a normal closed product.
+- An explicit open-state fixture exposes its interior and raised lid from the
+  same pedal description.
 - Side-mounted and top-mounted sockets appear on their declared surfaces.
 - Knob and footswitch counts follow model collections.
 - Pedals and controls cast coherent runtime shadows.

@@ -271,14 +271,20 @@ const shader_source =
     \\    float horizon = clamp(reflection.y * 0.5 + 0.5, 0.0, 1.0);
     \\    float3 environment = mix(float3(0.006, 0.010, 0.014), float3(0.10, 0.16, 0.18), horizon);
     \\    float3 to_strip = normalize(uniforms.light_position.xyz - in.world_position);
-    \\    float strip_reflection = pow(max(dot(reflection, to_strip), 0.0), mix(180.0, 12.0, roughness));
-    \\    environment += float3(1.0, 0.72, 0.46) * strip_reflection * 2.8;
-    \\    float3 fixed_strip_direction = normalize(float3(-0.72, 0.40, 0.56));
-    \\    float fixed_strip = pow(max(dot(reflection, fixed_strip_direction), 0.0), mix(120.0, 10.0, roughness));
-    \\    environment += float3(0.30, 0.58, 0.70) * fixed_strip * 1.6;
+    \\    float key_reflection_roughness = clamp(roughness + uniforms.strip_size_exposure.x * 0.035, 0.0, 1.0);
+    \\    float strip_reflection = pow(max(dot(reflection, to_strip), 0.0), mix(150.0, 8.0, key_reflection_roughness));
+    \\    environment += float3(1.0, 0.72, 0.46) * strip_reflection * 3.2;
+    \\    float3 fixed_strip_direction = normalize(float3(0.22, 0.91, -0.35));
+    \\    float fixed_strip_roughness = clamp(roughness + 0.20, 0.0, 1.0);
+    \\    float fixed_strip = pow(max(dot(reflection, fixed_strip_direction), 0.0), mix(110.0, 7.0, fixed_strip_roughness));
+    \\    environment += float3(0.30, 0.58, 0.70) * fixed_strip * 2.2;
     \\    float3 ambient_fresnel = fresnel_schlick(max(dot(n, v), 0.0), f0);
     \\    float3 ambient = environment * (ambient_fresnel + in.base_color * (1.0 - metallic) * 0.22) *
     \\        uniforms.strip_size_exposure.w;
+    \\    float clearcoat_strength = pow(1.0 - roughness, 3.0);
+    \\    float clearcoat_fresnel = fresnel_schlick(max(dot(n, v), 0.0), float3(0.04)).r;
+    \\    ambient += float3(0.52, 0.78, 0.96) * fixed_strip * clearcoat_strength *
+    \\        (0.55 + clearcoat_fresnel * 3.0);
     \\    float3 color = ambient + direct * mix(0.42, 1.0, visibility);
     \\    color = aces_tonemap(color * uniforms.strip_size_exposure.z);
     \\    color = pow(color, float3(1.0 / 2.2));
