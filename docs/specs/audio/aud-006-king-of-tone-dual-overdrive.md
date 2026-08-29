@@ -58,6 +58,7 @@ until redistribution rights are known.
 - Transition tests cover all four channel combinations without concurrent NAM
   evaluation.
 - The complete full-quality chain MUST remain faster than real time in the
-  production `ReleaseFast` benchmark. The reference Apple M1 result at import
-  time is 1.13x real time; this is a pass with limited headroom, not a final
-  performance target.
+  production `ReleaseFast` benchmark. A 64-frame stress run on the reference M1
+  exposed deadline misses despite passing on average; the standalone therefore
+  requests 512 frames and benchmarks that exact block size. This does not claim
+  that future CLAP/VST3 hosts are ready for 64-frame operation.

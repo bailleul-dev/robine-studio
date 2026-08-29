@@ -53,8 +53,10 @@ hosts are introduced.
 - Golden samples for both submodel sizes match an offline render produced by
   NeuralAmpModelerCore for the same NAM and WAV within a bounded float tolerance.
 - WAV decoding verifies mono, 48 kHz PCM24 input.
-- The release application negotiates 48 kHz CoreAudio output and starts with a
-  64-frame callback on the reference macOS machine.
+- The release application negotiates 48 kHz CoreAudio output and requests a
+  512-frame standalone buffer for the current three-NAM development chain.
+- The development monitor applies 6 dB of fixed output headroom after the
+  cabinet. This is output gain staging, not a substitute for a neural capture.
 - The full eight-channel compressor, King of Tone, and amplifier models plus
   cabinet response complete in real time while the Studio window remains
   interactive.

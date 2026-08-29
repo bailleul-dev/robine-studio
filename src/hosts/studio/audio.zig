@@ -147,7 +147,7 @@ pub const StartupPlayer = struct {
             .{
                 .direction = .output,
                 .sample_rate = self.amplifier.sample_rate,
-                .preferred_frames = 64,
+                .preferred_frames = 512,
                 .input_channels = 0,
                 .output_channels = 2,
             },
@@ -266,7 +266,11 @@ pub const StartupPlayer = struct {
             const amp_output = if (frame < active_frames) self.amplifier_block[frame] else 0.0;
             const absolute_frame = self.render_frame + frame;
             const sample = if (absolute_frame < rendered_frames)
-                std.math.clamp(self.cabinet.processSample(amp_output), -1.0, 1.0)
+                std.math.clamp(
+                    self.cabinet.processSample(amp_output) * assets.monitor_output_gain,
+                    -1.0,
+                    1.0,
+                )
             else
                 0.0;
 
