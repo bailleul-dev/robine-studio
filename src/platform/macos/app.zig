@@ -137,6 +137,14 @@ pub fn run(options: Options) !void {
     const style_mask: usize = 1 | 2 | 4 | 8;
     const window = try send4(Object, Rect, usize, usize, bool, window_alloc, "initWithContentRect:styleMask:backing:defer:", frame, style_mask, 2, false);
     try send1(void, Object, window, "setTitle:", try nsString(options.title));
+    try send1(void, Size, window, "setContentAspectRatio:", .{
+        .width = @floatFromInt(options.width),
+        .height = @floatFromInt(options.height),
+    });
+    try send1(void, Size, window, "setContentMinSize:", .{
+        .width = @as(f64, @floatFromInt(options.width)) * 0.625,
+        .height = @as(f64, @floatFromInt(options.height)) * 0.625,
+    });
     try send1(void, bool, window, "setReleasedWhenClosed:", false);
     try send1(void, Object, window, "setContentView:", view);
     try send0(void, window, "center");
