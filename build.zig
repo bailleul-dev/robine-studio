@@ -65,6 +65,7 @@ pub fn build(b: *std.Build) void {
         .name = "robine-audio-probe",
         .root_module = audio_probe_module,
     });
+    audio_probe.root_module.link_libc = true;
     audio_probe.root_module.linkFramework("CoreAudio", .{});
     audio_probe.root_module.linkFramework("CoreFoundation", .{});
     b.installArtifact(audio_probe);

@@ -2,6 +2,8 @@ const audio_contract = @import("audio_contract");
 const native_audio = @import("native_audio");
 const std = @import("std");
 
+extern "c" fn usleep(microseconds: u32) c_int;
+
 fn printDevice(_: *anyopaque, device: audio_contract.DeviceDescriptor) !void {
     std.debug.print(
         "{s}\n  id: {s}\n  inputs: {d}{s}\n  outputs: {d}{s}\n",
@@ -54,7 +56,7 @@ pub fn main() !void {
         },
     );
     try opened.session.start();
-    std.Thread.sleep(100 * std.time.ns_per_ms);
+    _ = usleep(100_000);
     opened.session.stop();
     std.debug.print(
         "  silent callback cycles: {d}\n",
