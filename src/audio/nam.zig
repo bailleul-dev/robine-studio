@@ -1,4 +1,5 @@
 const std = @import("std");
+const nam_a2 = @import("nam_a2.zig");
 
 const max_channels = 16;
 const max_kernel_taps = 64;
@@ -276,6 +277,7 @@ pub const Model = struct {
     layers: []Layer,
     head: Conv1d,
     head_scale: f32,
+    a2: ?nam_a2.Model = null,
     block_scratch: []f32 = &.{},
     block_capacity: usize = 0,
 
@@ -387,6 +389,12 @@ pub const Model = struct {
         cursor += 1;
         if (cursor != weights.len) return error.InvalidNamWeights;
 
+        var a2: ?nam_a2.Model = if (isA2Shape(config))
+            try nam_a2.Model.init(allocator, weights, channels)
+        else
+            null;
+        errdefer if (a2) |*fast| fast.deinit();
+
         return .{
             .allocator = allocator,
             .parsed = parsed,
@@ -396,6 +404,7 @@ pub const Model = struct {
             .layers = layers,
             .head = head,
             .head_scale = head_scale,
+            .a2 = a2,
         };
     }
 
@@ -403,6 +412,7 @@ pub const Model = struct {
         for (self.layers) |*layer| layer.deinit();
         self.allocator.free(self.layers);
         self.head.deinit();
+        if (self.a2) |*fast| fast.deinit();
         if (self.block_scratch.len != 0) self.allocator.free(self.block_scratch);
         self.parsed.deinit();
         self.* = undefined;
@@ -411,6 +421,7 @@ pub const Model = struct {
     pub fn reset(self: *Model) void {
         for (self.layers) |*layer| layer.reset();
         self.head.reset();
+        if (self.a2) |*fast| fast.reset();
     }
 
     pub fn prewarm(self: *Model, block_size: usize) void {
@@ -418,6 +429,9 @@ pub const Model = struct {
         const required = self.prewarmFrames();
         const rounded = std.math.divCeil(usize, required, frames) catch unreachable;
         for (0..rounded * frames) |_| _ = self.processSample(0.0);
+        if (self.a2) |*fast| {
+            if (fast.block_capacity != 0) fast.prewarm();
+        }
     }
 
     /// Allocates reusable planar scratch outside the real-time callback.
@@ -430,6 +444,7 @@ pub const Model = struct {
         if (self.block_scratch.len != 0) self.allocator.free(self.block_scratch);
         self.block_scratch = scratch;
         self.block_capacity = maximum_frames;
+        if (self.a2) |*fast| try fast.prepareBlock(maximum_frames);
     }
 
     pub fn process(self: *Model, input: []const f32, output: []f32) void {
@@ -444,6 +459,10 @@ pub const Model = struct {
         std.debug.assert(input.len == output.len);
         const frames = input.len;
         std.debug.assert(frames > 0 and frames <= self.block_capacity);
+        if (self.a2) |*fast| {
+            fast.processBlock(input, output);
+            return;
+        }
         const plane_samples = self.channels * frames;
         const current = self.block_scratch[0..plane_samples];
         const z = self.block_scratch[plane_samples..][0..plane_samples];
@@ -526,6 +545,26 @@ pub const Model = struct {
         return result;
     }
 };
+
+fn isA2Shape(config: *const LayerArrayConfig) bool {
+    if ((config.channels != 3 and config.channels != 8) or
+        config.head.kernel_size != nam_a2.head_kernel_size or
+        config.kernel_sizes.len != nam_a2.layer_count or
+        config.dilations.len != nam_a2.layer_count or
+        config.activation.len != nam_a2.layer_count)
+    {
+        return false;
+    }
+    if (!std.mem.eql(u16, config.kernel_sizes, &nam_a2.kernel_sizes) or
+        !std.mem.eql(u16, config.dilations, &nam_a2.dilations))
+    {
+        return false;
+    }
+    for (config.activation) |activation| {
+        if (activation.negative_slope != nam_a2.leaky_slope) return false;
+    }
+    return true;
+}
 
 test "causal convolution follows NAM oldest-to-newest weight order" {
     const allocator = std.testing.allocator;
