@@ -809,56 +809,57 @@ fn drawSignalChain(scene: *Scene, bounds: Bounds, rig: *const demo.Rig, view: Vi
     try scene.rectangle(bounds, palette.faint);
 
     const rail_y = bounds.bottom + bounds.height * 0.43;
-    const input_x = bounds.left + 0.08;
-    const output_x = bounds.right() - 0.07;
+    const input_x = bounds.right() - 0.08;
+    const output_x = bounds.left + 0.07;
     try scene.line(.{ input_x, rail_y }, .{ output_x, rail_y }, palette.cable);
-    try scene.line(.{ input_x + 0.08, rail_y }, .{ input_x + 0.08, bounds.bottom + 0.12 }, palette.blue);
-    try scene.line(.{ input_x + 0.08, bounds.bottom + 0.12 }, .{ output_x - 0.06, bounds.bottom + 0.12 }, palette.blue);
-    try scene.line(.{ output_x - 0.06, bounds.bottom + 0.12 }, .{ output_x - 0.06, rail_y }, palette.blue);
+    try scene.line(.{ input_x - 0.08, rail_y }, .{ input_x - 0.08, bounds.bottom + 0.12 }, palette.blue);
+    try scene.line(.{ input_x - 0.08, bounds.bottom + 0.12 }, .{ output_x + 0.06, bounds.bottom + 0.12 }, palette.blue);
+    try scene.line(.{ output_x + 0.06, bounds.bottom + 0.12 }, .{ output_x + 0.06, rail_y }, palette.blue);
 
     try scene.circle(.{ input_x, rail_y }, 0.025, palette.bright);
-    try scene.line(.{ input_x - 0.035, rail_y }, .{ input_x - 0.010, rail_y }, palette.bright);
+    try scene.line(.{ input_x + 0.010, rail_y }, .{ input_x + 0.035, rail_y }, palette.bright);
 
-    const pedal_start = input_x + 0.13;
+    const pedal_start = input_x - 0.13;
     const pedal_spacing: f32 = 0.095;
     for (rig.pedals, 0..) |pedal, index| {
+        const node_width: f32 = if (pedal.enclosure.form_factor == .double) 0.072 else 0.050;
         const node = Bounds{
-            .left = pedal_start + @as(f32, @floatFromInt(index)) * pedal_spacing,
+            .left = pedal_start - @as(f32, @floatFromInt(index)) * pedal_spacing - node_width,
             .bottom = rail_y - 0.055,
-            .width = if (pedal.enclosure.form_factor == .double) 0.072 else 0.050,
+            .width = node_width,
             .height = 0.110,
         };
         try drawMiniPedal(scene, node, accentColor(pedal.accent), index == 3);
     }
 
-    const split = [2]f32{ pedal_start + pedal_spacing * 5.35, rail_y };
+    const split = [2]f32{ pedal_start - pedal_spacing * 5.35, rail_y };
     try scene.fillRectangle(.{ .left = split[0] - 0.025, .bottom = split[1] - 0.025, .width = 0.050, .height = 0.050 }, palette.chrome_light);
     try scene.rectangle(.{ .left = split[0] - 0.025, .bottom = split[1] - 0.025, .width = 0.050, .height = 0.050 }, palette.mid);
 
-    const amp = Bounds{ .left = split[0] + 0.09, .bottom = rail_y - 0.16, .width = 0.25, .height = 0.11 };
-    const cab = Bounds{ .left = amp.right() + 0.05, .bottom = rail_y - 0.17, .width = 0.13, .height = 0.13 };
+    const amp = Bounds{ .left = split[0] - 0.34, .bottom = rail_y - 0.16, .width = 0.25, .height = 0.11 };
+    const cab = Bounds{ .left = amp.left - 0.18, .bottom = rail_y - 0.17, .width = 0.13, .height = 0.13 };
     try drawMiniAmplifier(scene, amp, rig.amplifier.controls.len, view == .amplifier);
     if (view == .rig) try scene.addHitRegion(amp, .show_amplifier);
     try drawMiniCabinet(scene, cab, rig.cabinet.speaker_count);
-    try scene.line(split, .{ split[0] + 0.045, split[1] }, palette.cable);
-    try scene.line(.{ split[0] + 0.045, split[1] }, .{ split[0] + 0.045, amp.top() - 0.025 }, palette.cable);
-    try scene.line(.{ split[0] + 0.045, amp.top() - 0.025 }, .{ amp.left, amp.top() - 0.025 }, palette.cable);
-    try scene.line(.{ amp.right(), amp.bottom + amp.height * 0.5 }, .{ cab.left, cab.bottom + cab.height * 0.5 }, palette.cable);
-    try scene.line(.{ cab.right(), cab.bottom + cab.height * 0.5 }, .{ output_x, rail_y }, palette.cable);
+    try scene.line(split, .{ split[0] - 0.045, split[1] }, palette.cable);
+    try scene.line(.{ split[0] - 0.045, split[1] }, .{ split[0] - 0.045, amp.top() - 0.025 }, palette.cable);
+    try scene.line(.{ split[0] - 0.045, amp.top() - 0.025 }, .{ amp.right(), amp.top() - 0.025 }, palette.cable);
+    try scene.line(.{ amp.left, amp.bottom + amp.height * 0.5 }, .{ cab.right(), cab.bottom + cab.height * 0.5 }, palette.cable);
+    try scene.line(.{ cab.left, cab.bottom + cab.height * 0.5 }, .{ output_x, rail_y }, palette.cable);
 
-    const alternate_amp = Bounds{ .left = amp.left + 0.02, .bottom = rail_y + 0.13, .width = 0.20, .height = 0.09 };
-    const alternate_cab = Bounds{ .left = alternate_amp.right() + 0.05, .bottom = rail_y + 0.11, .width = 0.11, .height = 0.12 };
+    const alternate_amp = Bounds{ .left = amp.right() - 0.22, .bottom = rail_y + 0.13, .width = 0.20, .height = 0.09 };
+    const alternate_cab = Bounds{ .left = alternate_amp.left - 0.16, .bottom = rail_y + 0.11, .width = 0.11, .height = 0.12 };
     try drawMiniAmplifier(scene, alternate_amp, 4, false);
     try drawMiniCabinet(scene, alternate_cab, 1);
-    try scene.line(split, .{ split[0] + 0.045, split[1] }, palette.cable);
-    try scene.line(.{ split[0] + 0.045, split[1] }, .{ split[0] + 0.045, alternate_amp.bottom + 0.025 }, palette.cable);
-    try scene.line(.{ split[0] + 0.045, alternate_amp.bottom + 0.025 }, .{ alternate_amp.left, alternate_amp.bottom + 0.025 }, palette.cable);
-    try scene.line(.{ alternate_amp.right(), alternate_amp.bottom + alternate_amp.height * 0.5 }, .{ alternate_cab.left, alternate_cab.bottom + alternate_cab.height * 0.5 }, palette.cable);
-    try scene.line(.{ alternate_cab.right(), alternate_cab.bottom + alternate_cab.height * 0.5 }, .{ output_x, rail_y }, palette.cable);
+    try scene.line(split, .{ split[0] - 0.045, split[1] }, palette.cable);
+    try scene.line(.{ split[0] - 0.045, split[1] }, .{ split[0] - 0.045, alternate_amp.bottom + 0.025 }, palette.cable);
+    try scene.line(.{ split[0] - 0.045, alternate_amp.bottom + 0.025 }, .{ alternate_amp.right(), alternate_amp.bottom + 0.025 }, palette.cable);
+    try scene.line(.{ alternate_amp.left, alternate_amp.bottom + alternate_amp.height * 0.5 }, .{ alternate_cab.right(), alternate_cab.bottom + alternate_cab.height * 0.5 }, palette.cable);
+    try scene.line(.{ alternate_cab.left, alternate_cab.bottom + alternate_cab.height * 0.5 }, .{ output_x, rail_y }, palette.cable);
 
     try scene.fillCircle(.{ output_x, rail_y }, 0.028, palette.chrome_light);
     try scene.circle(.{ output_x, rail_y }, 0.028, palette.bright);
-    try scene.line(.{ output_x + 0.035, rail_y }, .{ output_x + 0.070, rail_y }, palette.bright);
+    try scene.line(.{ output_x - 0.035, rail_y }, .{ output_x - 0.070, rail_y }, palette.bright);
 }
 
 fn drawMiniPedal(scene: *Scene, bounds: Bounds, accent: Color, selected: bool) !void {
@@ -1086,6 +1087,25 @@ test "semantic rig projects to finite layered geometry" {
     for (scene.fills()) |item| {
         try expectFiniteVertex(item);
     }
+}
+
+test "physical pedal layout follows the signal chain from right to left" {
+    const board = (Layout{}).board;
+    const pedals = try layoutPedalBounds(board, &demo.rig);
+    const last_index = demo.rig.pedals.len - 1;
+    try std.testing.expect(pedals[0].center()[0] > pedals[last_index].center()[0]);
+
+    const side_input = try projectPedalPort(pedals[0], demo.rig.pedals[0], .input);
+    const side_output = try projectPedalPort(pedals[0], demo.rig.pedals[0], .output);
+    try std.testing.expect(side_input.socket[0] > side_output.socket[0]);
+
+    const top_input = try projectPedalPort(pedals[1], demo.rig.pedals[1], .input);
+    const top_output = try projectPedalPort(pedals[1], demo.rig.pedals[1], .output);
+    try std.testing.expect(top_input.socket[0] > top_output.socket[0]);
+
+    const rig_input = try endpointPosition(.rig_input, board, pedals[0..demo.rig.pedals.len], &demo.rig);
+    const amp_input = try endpointPosition(.amplifier_input, board, pedals[0..demo.rig.pedals.len], &demo.rig);
+    try std.testing.expect(rig_input[0] > amp_input[0]);
 }
 
 test "focused navigation reaches lighting lab and returns to rig" {

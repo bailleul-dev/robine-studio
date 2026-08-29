@@ -46,6 +46,9 @@ plug transform, and cable route from the same assembly.
 
 ## Layout and routing rules
 
+- Conventional mono pedals mount their signal input on the right and their
+  signal output on the left when viewed from the control face. Top-mounted pairs
+  preserve the same right-to-left role ordering.
 - Pedal form factor MUST NOT determine jack location.
 - Product names MUST NOT appear in jack projection or routing code.
 - Cable paths MUST terminate at plug anchors, not at generic pedal bounds.
@@ -59,6 +62,8 @@ plug transform, and cable route from the same assembly.
 
 - Two `single` pedals can place their audio jacks on different surfaces.
 - A top-mounted pair and a side-mounted pair render visible socket rings.
+- The default side-mounted and top-mounted fixtures place input right and output
+  left.
 - Every connected port renders an inserted plug and the cable reaches its anchor.
 - Disconnecting a port leaves its empty socket visible.
 - Switching a port from a side surface to the top requires no renderer change.

@@ -17,6 +17,8 @@ The initial projection contains:
   from long planks oriented along scene depth with narrow recessed grooves.
 - Gently rounded enclosures sized from `PedalEnclosure.dimensions` in millimetres.
 - Layout spacing derived from physical width and bounded semantic gaps.
+- Pedals projected in signal order from right to left, matching physical
+  pedalboard practice while preserving semantic connection order.
 - Procedural knobs and pointers generated from the control collection.
 - One or more footswitches generated from `footswitch_count`.
 - Visible sockets placed on `left_side`, `right_side`, or `top` according to
@@ -73,6 +75,8 @@ that model is introduced.
 - Staggered parquet planks cover the complete visible 3D background without
   exposing a black perimeter.
 - The double pedal is physically wider than a single pedal.
+- The first pedal in the signal graph is rightmost and the final pedal is
+  leftmost.
 - Changing enclosure dimensions changes 3D size without changing renderer code.
 - The default demo presents every pedal as a normal closed product.
 - An explicit open-state fixture exposes its interior and raised lid from the
