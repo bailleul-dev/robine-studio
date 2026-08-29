@@ -13,8 +13,9 @@ not provide screen coordinates or renderer-specific triangles.
 
 The initial projection contains:
 
-- A bounded wooden pedalboard assembled from reusable planks and support rails.
-- Deeply rounded enclosures sized from `PedalEnclosure.dimensions` in millimetres.
+- A staggered parquet floor extending beyond the complete 3D viewport, assembled
+  from reusable planks with narrow visible joints.
+- Gently rounded enclosures sized from `PedalEnclosure.dimensions` in millimetres.
 - Layout spacing derived from physical width and bounded semantic gaps.
 - Procedural knobs and pointers generated from the control collection.
 - One or more footswitches generated from `footswitch_count`.
@@ -26,6 +27,7 @@ The initial projection contains:
   multiple quarter-circle fillet rings with smooth per-vertex normals rather
   than a single chamfer. Cylindrical controls, sockets, fasteners, and switches
   use a high-detail radial profile.
+- Closed product views do not add decorative fasteners to the pedal face.
 - Runtime metallic-roughness materials and cast shadows following UI-006.
 - Painted enclosures add a runtime clearcoat response so studio strips produce
   clean reflections without baking highlights into product assets.
@@ -68,6 +70,8 @@ that model is introduced.
 ## Acceptance criteria
 
 - The five-pedal demo rig renders as five 3D enclosures on one board.
+- Staggered parquet planks cover the complete visible 3D background without
+  exposing a black perimeter.
 - The double pedal is physically wider than a single pedal.
 - Changing enclosure dimensions changes 3D size without changing renderer code.
 - The default demo presents every pedal as a normal closed product.
@@ -75,5 +79,6 @@ that model is introduced.
   same pedal description.
 - Side-mounted and top-mounted sockets appear on their declared surfaces.
 - Knob and footswitch counts follow model collections.
+- Pedal faces contain no decorative corner screws.
 - Pedals and controls cast coherent runtime shadows.
 - The rig still navigates to the focused amplifier view.
