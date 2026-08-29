@@ -177,11 +177,6 @@ const side_ports = [_]PedalPort{
     .{ .id = "audio.output", .role = .output, .surface = .left_side, .slot = .start },
 };
 
-const top_ports = [_]PedalPort{
-    .{ .id = "audio.input", .role = .input, .surface = .top, .slot = .end },
-    .{ .id = "audio.output", .role = .output, .surface = .top, .slot = .start },
-};
-
 const pedals = [_]Pedal{
     .{
         .role = "compressor",
@@ -207,7 +202,7 @@ const pedals = [_]Pedal{
         .role = "fuzz_service",
         .name = "FUZZ",
         .controls = &fuzz_controls,
-        .ports = &top_ports,
+        .ports = &side_ports,
         .enclosure = enclosures.single,
         .accent = .coral,
         .indicator_brightness = 0.82,
@@ -225,7 +220,7 @@ const pedals = [_]Pedal{
         .role = "modulation",
         .name = "MODULATION",
         .controls = &modulation_controls,
-        .ports = &top_ports,
+        .ports = &side_ports,
         .enclosure = enclosures.double,
         .accent = .green,
         .footswitch_count = 2,
@@ -268,9 +263,10 @@ test "demo rig is connected semantically" {
     try std.testing.expectEqual(@as(f32, 2), rig.pedals[3].enclosure.footprint_units);
     try std.testing.expectEqual(JackSurface.right_side, rig.pedals[0].ports[0].surface);
     try std.testing.expectEqual(JackSurface.left_side, rig.pedals[0].ports[1].surface);
-    try std.testing.expectEqual(JackSurface.top, rig.pedals[1].ports[0].surface);
-    try std.testing.expectEqual(SurfaceSlot.end, rig.pedals[1].ports[0].slot);
-    try std.testing.expectEqual(SurfaceSlot.start, rig.pedals[1].ports[1].slot);
+    try std.testing.expectEqual(JackSurface.right_side, rig.pedals[1].ports[0].surface);
+    try std.testing.expectEqual(JackSurface.left_side, rig.pedals[1].ports[1].surface);
+    try std.testing.expectEqual(JackSurface.right_side, rig.pedals[3].ports[0].surface);
+    try std.testing.expectEqual(JackSurface.left_side, rig.pedals[3].ports[1].surface);
     try std.testing.expectEqual(PortRole.output, rig.pedals[3].ports[1].role);
     try std.testing.expectEqual(@as(u8, 2), rig.cabinet.speaker_count);
     try std.testing.expectEqualStrings("nam.sp-compressor", rig.pedals[0].processor.?.resource_id);

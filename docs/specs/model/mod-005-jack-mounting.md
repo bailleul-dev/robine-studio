@@ -62,8 +62,10 @@ plug transform, and cable route from the same assembly.
 
 - Two `single` pedals can place their audio jacks on different surfaces.
 - A top-mounted pair and a side-mounted pair render visible socket rings.
-- The default side-mounted and top-mounted fixtures place input right and output
-  left.
+- Side-mounted fixtures place input right and output left; top-mounted catalog
+  fixtures preserve the same role ordering.
+- A side-mounted socket visibly separates its mounting nut, metal barrel,
+  insulating collar, and recessed connector mouth.
 - Every connected port renders an inserted plug and the cable reaches its anchor.
 - Disconnecting a port leaves its empty socket visible.
 - Switching a port from a side surface to the top requires no renderer change.

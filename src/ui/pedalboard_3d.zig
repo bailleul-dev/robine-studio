@@ -712,15 +712,96 @@ fn addPorts(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void {
                 try addCylinder(mesh, .{ x, base[1] + size[1] + 0.17, z }, 0.075, 0.08, materials.rubber, .y);
             },
             .left_side => {
-                const x = base[0] - size[0] * 0.5 - 0.06;
-                try addCylinder(mesh, .{ x, base[1] + size[1] * 0.56, base[2] + slot * size[2] }, 0.15, 0.14, materials.chrome, .x);
-                try addCylinder(mesh, .{ x - 0.09, base[1] + size[1] * 0.56, base[2] + slot * size[2] }, 0.08, 0.10, materials.rubber, .x);
+                try addSideJack(
+                    mesh,
+                    .{ base[0] - size[0] * 0.5, base[1] + size[1] * 0.62, base[2] + slot * size[2] },
+                    -1,
+                );
             },
             .right_side => {
-                const x = base[0] + size[0] * 0.5 + 0.06;
-                try addCylinder(mesh, .{ x, base[1] + size[1] * 0.56, base[2] + slot * size[2] }, 0.15, 0.14, materials.chrome, .x);
-                try addCylinder(mesh, .{ x + 0.09, base[1] + size[1] * 0.56, base[2] + slot * size[2] }, 0.08, 0.10, materials.rubber, .x);
+                try addSideJack(
+                    mesh,
+                    .{ base[0] + size[0] * 0.5, base[1] + size[1] * 0.62, base[2] + slot * size[2] },
+                    1,
+                );
             },
+        }
+    }
+}
+
+fn addSideJack(mesh: *Mesh, mount: [3]f32, outward: f32) !void {
+    // A real side socket reads as a layered assembly: mounting nut, washer,
+    // threaded barrel, insulating collar, then the recessed connector mouth.
+    try addCylinderSegments(
+        mesh,
+        .{ mount[0] + outward * 0.035, mount[1], mount[2] },
+        0.185,
+        0.070,
+        materials.polished_chrome,
+        .x,
+        6,
+    );
+    try addCylinder(
+        mesh,
+        .{ mount[0] + outward * 0.078, mount[1], mount[2] },
+        0.158,
+        0.034,
+        materials.polished_chrome,
+        .x,
+    );
+    try addCylinder(
+        mesh,
+        .{ mount[0] + outward * 0.130, mount[1], mount[2] },
+        0.119,
+        0.105,
+        materials.chrome,
+        .x,
+    );
+    try addCylinder(
+        mesh,
+        .{ mount[0] + outward * 0.187, mount[1], mount[2] },
+        0.101,
+        0.045,
+        materials.black_metal,
+        .x,
+    );
+    try addCylinder(
+        mesh,
+        .{ mount[0] + outward * 0.213, mount[1], mount[2] },
+        0.083,
+        0.026,
+        materials.polished_chrome,
+        .x,
+    );
+    try addAxialDisc(
+        mesh,
+        .{ mount[0] + outward * 0.228, mount[1], mount[2] },
+        0.058,
+        .x,
+        outward,
+        materials.rubber,
+    );
+}
+
+fn addAxialDisc(
+    mesh: *Mesh,
+    center: [3]f32,
+    radius: f32,
+    axis: Axis,
+    facing: f32,
+    material: Material,
+) !void {
+    const segments: usize = 48;
+    const normal = axisVector(axis, facing);
+    for (0..segments) |segment| {
+        const angle0 = std.math.tau * @as(f32, @floatFromInt(segment)) / @as(f32, @floatFromInt(segments));
+        const angle1 = std.math.tau * @as(f32, @floatFromInt(segment + 1)) / @as(f32, @floatFromInt(segments));
+        const edge0 = cylinderPoint(center, axis, 0, radius, angle0);
+        const edge1 = cylinderPoint(center, axis, 0, radius, angle1);
+        if (facing > 0) {
+            try mesh.triangle(vertex(center, normal, material), vertex(edge1, normal, material), vertex(edge0, normal, material));
+        } else {
+            try mesh.triangle(vertex(center, normal, material), vertex(edge0, normal, material), vertex(edge1, normal, material));
         }
     }
 }
