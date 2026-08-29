@@ -1,12 +1,12 @@
 # AUD-001: Audio integration boundary
 
-Status: Deferred
+Status: Draft
 
 ## Summary
 
-This specification reserves the boundary through which a future real-time audio
-engine will consume core parameter events and expose metering to hosts and UI. It
-does not specify an amplifier model or require audio in the rendering MVP.
+This specification defines the boundary through which the real-time audio engine
+consumes core parameter events and exposes metering to hosts and UI. It does not
+specify an amplifier model or require audio in the rendering MVP.
 
 ## Architectural requirements
 
@@ -19,7 +19,7 @@ does not specify an amplifier model or require audio in the rendering MVP.
 
 ## Processor boundary
 
-The future processor interface must cover:
+The processor interface must cover:
 
 - Preparation for sample rate, maximum block size, and channel layout.
 - Activation, reset, processing, and deactivation.
@@ -58,7 +58,7 @@ structures before publication.
 - The UI renders the canonical core value and treats telemetry as read-only.
 - No UI scene node or control pointer crosses the audio boundary.
 
-## Future acceptance criteria
+## Acceptance criteria
 
 - The same processor passes a host-independent offline render test and runs in
   standalone and plugin hosts.

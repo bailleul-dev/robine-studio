@@ -99,6 +99,73 @@ pub const Scene = struct {
         );
     }
 
+    fn gradientRectangle(self: *Scene, bounds: Bounds, bottom_color: Color, top_color: Color) !void {
+        if (self.fill_len + 6 > self.fill_vertices.len) return error.SceneCapacityExceeded;
+        const bottom_left = vertex(.{ bounds.left, bounds.bottom }, bottom_color);
+        const bottom_right = vertex(.{ bounds.right(), bounds.bottom }, bottom_color);
+        const top_left = vertex(.{ bounds.left, bounds.top() }, top_color);
+        const top_right = vertex(.{ bounds.right(), bounds.top() }, top_color);
+        self.fill_vertices[self.fill_len] = bottom_left;
+        self.fill_vertices[self.fill_len + 1] = bottom_right;
+        self.fill_vertices[self.fill_len + 2] = top_right;
+        self.fill_vertices[self.fill_len + 3] = bottom_left;
+        self.fill_vertices[self.fill_len + 4] = top_right;
+        self.fill_vertices[self.fill_len + 5] = top_left;
+        self.fill_len += 6;
+    }
+
+    fn fillRoundedRectangle(self: *Scene, bounds: Bounds, requested_radius: f32, color: Color) !void {
+        const radius = @min(requested_radius, @min(bounds.width, bounds.height) * 0.5);
+        if (radius <= 0.0001) return self.fillRectangle(bounds, color);
+        try self.fillRectangle(.{
+            .left = bounds.left + radius,
+            .bottom = bounds.bottom,
+            .width = bounds.width - radius * 2.0,
+            .height = bounds.height,
+        }, color);
+        try self.fillRectangle(.{
+            .left = bounds.left,
+            .bottom = bounds.bottom + radius,
+            .width = bounds.width,
+            .height = bounds.height - radius * 2.0,
+        }, color);
+        const corners = [_]struct { center: [2]f32, start: f32 }{
+            .{ .center = .{ bounds.left + radius, bounds.bottom + radius }, .start = std.math.pi },
+            .{ .center = .{ bounds.right() - radius, bounds.bottom + radius }, .start = -std.math.pi * 0.5 },
+            .{ .center = .{ bounds.right() - radius, bounds.top() - radius }, .start = 0 },
+            .{ .center = .{ bounds.left + radius, bounds.top() - radius }, .start = std.math.pi * 0.5 },
+        };
+        for (corners) |corner| {
+            for (0..6) |index| {
+                const a = corner.start + @as(f32, @floatFromInt(index)) * std.math.pi * 0.5 / 6.0;
+                const b = corner.start + @as(f32, @floatFromInt(index + 1)) * std.math.pi * 0.5 / 6.0;
+                try self.triangle(corner.center, pointOnCircle(corner.center, radius, a), pointOnCircle(corner.center, radius, b), color);
+            }
+        }
+    }
+
+    fn roundedRectangle(self: *Scene, bounds: Bounds, requested_radius: f32, color: Color) !void {
+        const radius = @min(requested_radius, @min(bounds.width, bounds.height) * 0.5);
+        if (radius <= 0.0001) return self.rectangle(bounds, color);
+        try self.line(.{ bounds.left + radius, bounds.bottom }, .{ bounds.right() - radius, bounds.bottom }, color);
+        try self.line(.{ bounds.right(), bounds.bottom + radius }, .{ bounds.right(), bounds.top() - radius }, color);
+        try self.line(.{ bounds.right() - radius, bounds.top() }, .{ bounds.left + radius, bounds.top() }, color);
+        try self.line(.{ bounds.left, bounds.top() - radius }, .{ bounds.left, bounds.bottom + radius }, color);
+        const corners = [_]struct { center: [2]f32, start: f32 }{
+            .{ .center = .{ bounds.left + radius, bounds.bottom + radius }, .start = std.math.pi },
+            .{ .center = .{ bounds.right() - radius, bounds.bottom + radius }, .start = -std.math.pi * 0.5 },
+            .{ .center = .{ bounds.right() - radius, bounds.top() - radius }, .start = 0 },
+            .{ .center = .{ bounds.left + radius, bounds.top() - radius }, .start = std.math.pi * 0.5 },
+        };
+        for (corners) |corner| {
+            for (0..6) |index| {
+                const a = corner.start + @as(f32, @floatFromInt(index)) * std.math.pi * 0.5 / 6.0;
+                const b = corner.start + @as(f32, @floatFromInt(index + 1)) * std.math.pi * 0.5 / 6.0;
+                try self.line(pointOnCircle(corner.center, radius, a), pointOnCircle(corner.center, radius, b), color);
+            }
+        }
+    }
+
     fn triangle(self: *Scene, a: [2]f32, b: [2]f32, c: [2]f32, color: Color) !void {
         if (self.fill_len + 3 > self.fill_vertices.len) return error.SceneCapacityExceeded;
         self.fill_vertices[self.fill_len] = vertex(a, color);
@@ -178,16 +245,19 @@ const Layout = struct {
 };
 
 const palette = struct {
-    const background = Color{ .r = 0.014, .g = 0.020, .b = 0.019 };
-    const chrome = Color{ .r = 0.045, .g = 0.056, .b = 0.054 };
-    const chrome_light = Color{ .r = 0.074, .g = 0.090, .b = 0.087 };
-    const surface = Color{ .r = 0.025, .g = 0.035, .b = 0.033 };
+    const background = Color{ .r = 0.010, .g = 0.014, .b = 0.014 };
+    const chrome = Color{ .r = 0.030, .g = 0.037, .b = 0.036 };
+    const chrome_top = Color{ .r = 0.060, .g = 0.070, .b = 0.067 };
+    const chrome_light = Color{ .r = 0.082, .g = 0.096, .b = 0.092 };
+    const surface = Color{ .r = 0.020, .g = 0.027, .b = 0.026 };
+    const surface_active = Color{ .r = 0.105, .g = 0.072, .b = 0.025 };
     const board_a = Color{ .r = 0.040, .g = 0.033, .b = 0.025 };
     const board_b = Color{ .r = 0.053, .g = 0.041, .b = 0.029 };
-    const faint = Color{ .r = 0.13, .g = 0.18, .b = 0.17 };
-    const mid = Color{ .r = 0.25, .g = 0.35, .b = 0.33 };
-    const bright = Color{ .r = 0.64, .g = 0.88, .b = 0.79 };
-    const amber = Color{ .r = 1.0, .g = 0.60, .b = 0.10 };
+    const faint = Color{ .r = 0.105, .g = 0.132, .b = 0.128 };
+    const mid = Color{ .r = 0.27, .g = 0.35, .b = 0.33 };
+    const bright = Color{ .r = 0.70, .g = 0.84, .b = 0.79 };
+    const amber = Color{ .r = 1.0, .g = 0.56, .b = 0.08 };
+    const amber_soft = Color{ .r = 0.52, .g = 0.25, .b = 0.035 };
     const cable = Color{ .r = 1.0, .g = 0.57, .b = 0.08 };
     const blue = Color{ .r = 0.08, .g = 0.55, .b = 1.0 };
     const green = Color{ .r = 0.20, .g = 0.94, .b = 0.50 };
@@ -198,16 +268,23 @@ pub fn project(scene: *Scene, rig: *const demo.Rig) !void {
 }
 
 pub fn projectView(scene: *Scene, rig: *const demo.Rig, view: ViewState) !void {
+    try projectStudioView(scene, rig, view, false);
+}
+
+pub fn projectStudioView(scene: *Scene, rig: *const demo.Rig, view: ViewState, amplifier_focused: bool) !void {
     scene.* = Scene{};
     const layout = Layout{};
 
     try scene.fillRectangle(.{ .left = -1, .bottom = -1, .width = 2, .height = 2 }, palette.background);
-    try drawToolbar(scene, layout.toolbar);
+    try drawToolbar(scene, layout.toolbar, view, amplifier_focused);
     switch (view) {
         .rig => {
             const pedal_bounds = try layoutPedalBounds(layout.board, rig);
             try drawPedalboard3dFrame(scene, layout.board);
-            try drawSlotBar(scene, layout.slot_bar, pedal_bounds[0..rig.pedals.len]);
+            if (amplifier_focused)
+                try drawFocusedAmplifierStrip(scene, layout.slot_bar, rig)
+            else
+                try drawSlotBar(scene, layout.slot_bar, pedal_bounds[0..rig.pedals.len], rig.pedals);
         },
         .amplifier => {
             try drawAmplifierView(scene, layout.board, rig);
@@ -232,53 +309,120 @@ pub fn activate(scene: *const Scene, state: *ViewState, point: [2]f32) bool {
     return true;
 }
 
-fn drawToolbar(scene: *Scene, bounds: Bounds) !void {
-    try scene.fillRectangle(bounds, palette.chrome);
-    try scene.line(.{ bounds.left, bounds.bottom }, .{ bounds.right(), bounds.bottom }, palette.faint);
+fn drawToolbar(scene: *Scene, bounds: Bounds, view: ViewState, amplifier_focused: bool) !void {
+    try scene.gradientRectangle(bounds, palette.chrome, palette.chrome_top);
+    try scene.fillRectangle(.{ .left = bounds.left, .bottom = bounds.bottom, .width = bounds.width, .height = 0.008 }, palette.background);
+    try scene.line(.{ bounds.left, bounds.bottom + 0.008 }, .{ bounds.right(), bounds.bottom + 0.008 }, palette.faint);
 
-    const preset = Bounds{ .left = bounds.left + 0.015, .bottom = bounds.bottom + 0.018, .width = 0.095, .height = bounds.height - 0.036 };
-    try scene.fillRectangle(preset, palette.surface);
-    try scene.rectangle(preset, palette.faint);
-    try drawDigit(scene, .{ preset.left + 0.018, preset.bottom + 0.018 }, 0.018, 0.046, 0, palette.amber);
-    try drawDigit(scene, .{ preset.left + 0.043, preset.bottom + 0.018 }, 0.018, 0.046, 0, palette.amber);
-    try drawDigit(scene, .{ preset.left + 0.068, preset.bottom + 0.018 }, 0.018, 0.046, 1, palette.amber);
+    const control_height = bounds.height - 0.044;
+    const control_bottom = bounds.bottom + 0.026;
+    const preset = Bounds{ .left = bounds.left + 0.018, .bottom = control_bottom, .width = 0.118, .height = control_height };
+    try scene.fillRoundedRectangle(preset, 0.018, palette.surface);
+    try scene.roundedRectangle(preset, 0.018, palette.faint);
+    try scene.fillCircle(.{ preset.left + 0.019, preset.center()[1] }, 0.005, palette.amber);
+    try drawDigit(scene, .{ preset.left + 0.038, preset.bottom + 0.020 }, 0.017, 0.043, 0, palette.amber);
+    try drawDigit(scene, .{ preset.left + 0.062, preset.bottom + 0.020 }, 0.017, 0.043, 0, palette.amber);
+    try drawDigit(scene, .{ preset.left + 0.086, preset.bottom + 0.020 }, 0.017, 0.043, 1, palette.amber);
 
-    const folder = Bounds{ .left = preset.right() + 0.012, .bottom = preset.bottom, .width = 0.072, .height = preset.height };
-    try scene.fillRectangle(folder, palette.chrome_light);
-    try scene.rectangle(folder, palette.faint);
-    try scene.rectangle(folder.inset(0.020), palette.mid);
-    try scene.line(.{ folder.left + 0.022, folder.top() - 0.021 }, .{ folder.left + 0.042, folder.top() - 0.021 }, palette.mid);
+    const navigation = Bounds{ .left = preset.right() + 0.012, .bottom = control_bottom, .width = 0.078, .height = control_height };
+    try scene.fillRoundedRectangle(navigation, 0.018, palette.surface);
+    try scene.roundedRectangle(navigation, 0.018, palette.faint);
+    try scene.line(.{ navigation.center()[0], navigation.bottom + 0.014 }, .{ navigation.center()[0], navigation.top() - 0.014 }, palette.faint);
+    try drawChevron(scene, .{ navigation.left + 0.020, navigation.center()[1] }, 0.012, false, palette.mid);
+    try drawChevron(scene, .{ navigation.right() - 0.020, navigation.center()[1] }, 0.012, true, palette.bright);
 
-    const title_bar = Bounds{ .left = folder.right() + 0.012, .bottom = preset.bottom, .width = 0.30, .height = preset.height };
-    try scene.fillRectangle(title_bar, palette.surface);
-    try scene.rectangle(title_bar, palette.faint);
-    try drawWave(scene, title_bar.inset(0.018), palette.mid);
+    const title_bar = Bounds{ .left = navigation.right() + 0.012, .bottom = control_bottom, .width = 0.285, .height = control_height };
+    try scene.fillRoundedRectangle(title_bar, 0.018, palette.surface);
+    try scene.roundedRectangle(title_bar, 0.018, palette.faint);
+    const favorite = [2]f32{ title_bar.right() - 0.026, title_bar.center()[1] };
+    try scene.circle(favorite, 0.008, palette.amber_soft);
+    try drawWave(scene, .{ .left = title_bar.left + 0.022, .bottom = title_bar.bottom + 0.024, .width = title_bar.width - 0.068, .height = title_bar.height - 0.048 }, palette.mid);
 
-    const logo_center = [2]f32{ bounds.left + bounds.width * 0.50, bounds.bottom + bounds.height * 0.53 };
-    try scene.line(.{ logo_center[0] - 0.13, logo_center[1] }, .{ logo_center[0] + 0.13, logo_center[1] }, palette.mid);
-    try scene.circle(logo_center, 0.026, palette.bright);
-    try scene.circle(logo_center, 0.014, palette.amber);
+    const logo_center = [2]f32{ bounds.center()[0], bounds.bottom + bounds.height * 0.53 };
+    try scene.line(.{ logo_center[0] - 0.112, logo_center[1] }, .{ logo_center[0] - 0.036, logo_center[1] }, palette.faint);
+    try scene.line(.{ logo_center[0] + 0.036, logo_center[1] }, .{ logo_center[0] + 0.112, logo_center[1] }, palette.faint);
+    try scene.circle(.{ logo_center[0] - 0.010, logo_center[1] }, 0.020, palette.bright);
+    try scene.circle(.{ logo_center[0] + 0.010, logo_center[1] }, 0.020, palette.amber_soft);
+    try scene.fillCircle(logo_center, 0.005, palette.amber);
 
-    var x = bounds.right() - 0.30;
-    var index: usize = 0;
-    while (index < 4) : (index += 1) {
-        const cell = Bounds{ .left = x, .bottom = preset.bottom, .width = 0.062, .height = preset.height };
-        try scene.fillRectangle(cell, if (index == 0) palette.surface else palette.chrome_light);
-        try scene.rectangle(cell, palette.faint);
-        if (index == 0) {
-            try scene.circle(cell.center(), 0.014, palette.amber);
-            try scene.circle(.{ cell.center()[0] + 0.018, cell.center()[1] }, 0.014, palette.amber);
-        } else if (index == 3) {
-            var bar: usize = 0;
-            while (bar < 3) : (bar += 1) {
-                const y = cell.bottom + 0.024 + @as(f32, @floatFromInt(bar)) * 0.018;
-                try scene.line(.{ cell.left + 0.015, y }, .{ cell.right() - 0.015, y }, palette.bright);
-            }
-        } else {
-            try scene.circle(cell.center(), 0.020, if (index == 1) palette.mid else palette.bright);
+    const mode_switch = Bounds{ .left = bounds.right() - 0.300, .bottom = control_bottom, .width = 0.210, .height = control_height };
+    try scene.fillRoundedRectangle(mode_switch, 0.020, palette.surface);
+    try scene.roundedRectangle(mode_switch, 0.020, palette.faint);
+    const cell_width = mode_switch.width / 3.0;
+    const active_mode: usize = switch (view) {
+        .rig => if (amplifier_focused) 1 else 0,
+        .amplifier => 1,
+        .lighting_lab => 2,
+    };
+    for (0..3) |index| {
+        const cell = Bounds{
+            .left = mode_switch.left + @as(f32, @floatFromInt(index)) * cell_width,
+            .bottom = mode_switch.bottom,
+            .width = cell_width,
+            .height = mode_switch.height,
+        };
+        if (index == active_mode) {
+            try scene.fillRoundedRectangle(cell.inset(0.007), 0.015, palette.surface_active);
         }
-        x += 0.068;
+        const icon_color = if (index == active_mode) palette.amber else palette.mid;
+        if (index == 0)
+            try drawRigIcon(scene, cell.center(), icon_color)
+        else if (index == 1)
+            try drawAmpIcon(scene, cell.center(), icon_color)
+        else
+            try drawCubeIcon(scene, cell.center(), icon_color);
+        try scene.addHitRegion(cell, switch (index) {
+            0 => .show_rig,
+            1 => .show_amplifier,
+            else => .show_lighting_lab,
+        });
+        if (index > 0) try scene.line(.{ cell.left, cell.bottom + 0.018 }, .{ cell.left, cell.top() - 0.018 }, palette.faint);
     }
+
+    const menu = Bounds{ .left = bounds.right() - 0.072, .bottom = control_bottom, .width = 0.054, .height = control_height };
+    try scene.fillRoundedRectangle(menu, 0.018, palette.surface);
+    try scene.roundedRectangle(menu, 0.018, palette.faint);
+    for (0..3) |index| {
+        const y = menu.center()[1] + (@as(f32, @floatFromInt(index)) - 1.0) * 0.014;
+        try scene.line(.{ menu.left + 0.015, y }, .{ menu.right() - 0.015, y }, if (index == 1) palette.bright else palette.mid);
+    }
+}
+
+fn drawChevron(scene: *Scene, center: [2]f32, size: f32, right: bool, color: Color) !void {
+    const direction: f32 = if (right) 1 else -1;
+    const tip = [2]f32{ center[0] + size * direction, center[1] };
+    const back_x = center[0] - size * 0.55 * direction;
+    try scene.line(.{ back_x, center[1] - size }, tip, color);
+    try scene.line(tip, .{ back_x, center[1] + size }, color);
+}
+
+fn drawRigIcon(scene: *Scene, center: [2]f32, color: Color) !void {
+    const left = Bounds{ .left = center[0] - 0.023, .bottom = center[1] - 0.018, .width = 0.018, .height = 0.034 };
+    const right = Bounds{ .left = center[0] + 0.005, .bottom = center[1] - 0.014, .width = 0.018, .height = 0.028 };
+    try scene.roundedRectangle(left, 0.004, color);
+    try scene.roundedRectangle(right, 0.004, color);
+    try scene.circle(.{ left.center()[0], left.bottom + 0.008 }, 0.003, color);
+    try scene.circle(.{ right.center()[0], right.bottom + 0.007 }, 0.003, color);
+    try scene.line(.{ left.right(), center[1] + 0.005 }, .{ right.left, center[1] + 0.005 }, color);
+}
+
+fn drawAmpIcon(scene: *Scene, center: [2]f32, color: Color) !void {
+    const shell = Bounds{ .left = center[0] - 0.025, .bottom = center[1] - 0.018, .width = 0.050, .height = 0.036 };
+    try scene.roundedRectangle(shell, 0.006, color);
+    try scene.line(.{ shell.left + 0.006, shell.top() - 0.010 }, .{ shell.right() - 0.006, shell.top() - 0.010 }, color);
+    try scene.circle(.{ center[0], center[1] - 0.005 }, 0.009, color);
+}
+
+fn drawCubeIcon(scene: *Scene, center: [2]f32, color: Color) !void {
+    const top = [2]f32{ center[0], center[1] + 0.021 };
+    const left = [2]f32{ center[0] - 0.021, center[1] + 0.009 };
+    const right = [2]f32{ center[0] + 0.021, center[1] + 0.009 };
+    const bottom = [2]f32{ center[0], center[1] - 0.021 };
+    try scene.line(top, left, color);
+    try scene.line(top, right, color);
+    try scene.line(left, bottom, color);
+    try scene.line(right, bottom, color);
+    try scene.line(top, bottom, color);
 }
 
 fn drawPedalboard(scene: *Scene, bounds: Bounds, rig: *const demo.Rig) ![8]Bounds {
@@ -524,19 +668,90 @@ fn drawFootswitch(scene: *Scene, center: [2]f32, accent: Color) !void {
     try scene.circle(center, 0.022, palette.mid);
 }
 
-fn drawSlotBar(scene: *Scene, bounds: Bounds, pedals: []const Bounds) !void {
-    try scene.fillRectangle(bounds, palette.chrome);
-    try scene.line(.{ bounds.left, bounds.top() }, .{ bounds.right(), bounds.top() }, palette.faint);
-    for (pedals, 0..) |pedal, index| {
-        const slot = Bounds{ .left = pedal.left, .bottom = bounds.bottom + 0.010, .width = pedal.width, .height = bounds.height - 0.020 };
-        try scene.fillRectangle(slot, palette.surface);
-        try scene.rectangle(slot, palette.faint);
-        const power = [2]f32{ slot.left + 0.025, slot.bottom + slot.height * 0.5 };
-        try scene.circle(power, 0.010, if (index == 1) palette.cable else palette.amber);
-        try scene.line(power, .{ power[0], power[1] + 0.015 }, palette.amber);
-        try scene.line(.{ slot.right() - 0.022, slot.top() - 0.018 }, .{ slot.right() - 0.013, slot.top() - 0.028 }, palette.mid);
-        try scene.line(.{ slot.right() - 0.013, slot.top() - 0.028 }, .{ slot.right() - 0.004, slot.top() - 0.018 }, palette.mid);
+fn drawSlotBar(scene: *Scene, bounds: Bounds, pedal_bounds: []const Bounds, pedals: []const demo.Pedal) !void {
+    try scene.gradientRectangle(bounds, palette.chrome, palette.chrome_top);
+    try scene.fillRectangle(.{ .left = bounds.left, .bottom = bounds.top() - 0.006, .width = bounds.width, .height = 0.006 }, palette.background);
+    for (pedal_bounds, pedals, 0..) |pedal_bound, pedal, index| {
+        const slot = Bounds{
+            .left = pedal_bound.left + 0.006,
+            .bottom = bounds.bottom + 0.009,
+            .width = pedal_bound.width - 0.012,
+            .height = bounds.height - 0.018,
+        };
+        const accent = accentColor(pedal.accent);
+        try scene.fillRoundedRectangle(slot, 0.012, if (index == 1) palette.surface_active else palette.surface);
+        try scene.roundedRectangle(slot, 0.012, if (index == 1) palette.amber_soft else palette.faint);
+        try scene.fillRectangle(.{
+            .left = slot.left + 0.014,
+            .bottom = slot.bottom + 0.004,
+            .width = slot.width - 0.028,
+            .height = 0.004,
+        }, if (index == 1) palette.amber else darken(accent, 0.58));
+
+        const power = [2]f32{ slot.left + 0.024, slot.center()[1] };
+        try scene.fillCircle(power, 0.010, palette.chrome_light);
+        try scene.circle(power, 0.010, if (index == 1) palette.amber else accent);
+        try scene.circle(power, 0.005, palette.background);
+        try scene.line(power, .{ power[0], power[1] + 0.010 }, if (index == 1) palette.amber else accent);
+
+        const control_count = @min(pedal.controls.len, 4);
+        const controls_width: f32 = @as(f32, @floatFromInt(control_count)) * 0.018;
+        const controls_left = slot.center()[0] - controls_width * 0.5;
+        for (0..control_count) |control_index| {
+            const center = [2]f32{
+                controls_left + @as(f32, @floatFromInt(control_index)) * 0.018 + 0.009,
+                slot.center()[1],
+            };
+            try scene.fillCircle(center, 0.005, palette.chrome_light);
+            try scene.circle(center, 0.005, if (index == 1) palette.bright else accent);
+        }
+        const menu_center = [2]f32{ slot.right() - 0.020, slot.center()[1] };
+        try scene.line(.{ menu_center[0] - 0.006, menu_center[1] + 0.003 }, .{ menu_center[0], menu_center[1] - 0.004 }, palette.mid);
+        try scene.line(.{ menu_center[0], menu_center[1] - 0.004 }, .{ menu_center[0] + 0.006, menu_center[1] + 0.003 }, palette.mid);
     }
+}
+
+fn drawFocusedAmplifierStrip(scene: *Scene, bounds: Bounds, rig: *const demo.Rig) !void {
+    try scene.gradientRectangle(bounds, palette.chrome, palette.chrome_top);
+    try scene.fillRectangle(.{ .left = bounds.left, .bottom = bounds.top() - 0.006, .width = bounds.width, .height = 0.006 }, palette.background);
+
+    const back = Bounds{ .left = bounds.left + 0.012, .bottom = bounds.bottom + 0.009, .width = 0.080, .height = bounds.height - 0.018 };
+    try scene.fillRoundedRectangle(back, 0.014, palette.surface_active);
+    try scene.roundedRectangle(back, 0.014, palette.amber_soft);
+    try drawChevron(scene, .{ back.center()[0] - 0.004, back.center()[1] }, 0.009, false, palette.amber);
+    try scene.addHitRegion(back, .show_rig);
+
+    const identity = Bounds{ .left = back.right() + 0.012, .bottom = back.bottom, .width = 0.175, .height = back.height };
+    try scene.fillRoundedRectangle(identity, 0.014, palette.surface);
+    try scene.roundedRectangle(identity, 0.014, palette.faint);
+    try drawAmpIcon(scene, .{ identity.left + 0.034, identity.center()[1] }, palette.amber);
+    try scene.line(.{ identity.left + 0.064, identity.center()[1] }, .{ identity.right() - 0.018, identity.center()[1] }, palette.mid);
+
+    const control_area = Bounds{ .left = identity.right() + 0.012, .bottom = back.bottom, .width = 0.65, .height = back.height };
+    try scene.fillRoundedRectangle(control_area, 0.014, palette.surface);
+    try scene.roundedRectangle(control_area, 0.014, palette.faint);
+    const control_count = @max(@as(usize, 1), rig.amplifier.controls.len);
+    for (rig.amplifier.controls, 0..) |control, index| {
+        const x = control_area.left + control_area.width * (@as(f32, @floatFromInt(index)) + 0.5) / @as(f32, @floatFromInt(control_count));
+        const center = [2]f32{ x, control_area.center()[1] };
+        try scene.fillCircle(center, 0.012, palette.chrome_light);
+        try scene.circle(center, 0.012, if (index == 0) palette.amber else palette.mid);
+        const angle = (-0.72 + control.normalized_value * 1.44) * std.math.pi;
+        try scene.line(center, pointOnCircle(center, 0.009, angle), palette.bright);
+    }
+
+    const status = Bounds{ .left = control_area.right() + 0.012, .bottom = back.bottom, .width = bounds.right() - control_area.right() - 0.024, .height = back.height };
+    try scene.fillRoundedRectangle(status, 0.014, palette.surface);
+    try scene.roundedRectangle(status, 0.014, palette.faint);
+    const power = [2]f32{ status.left + 0.035, status.center()[1] };
+    try scene.fillCircle(power, 0.010, palette.amber_soft);
+    try scene.circle(power, 0.010, palette.amber);
+    try scene.line(power, .{ power[0], power[1] + 0.011 }, palette.bright);
+    const input = [2]f32{ status.right() - 0.035, status.center()[1] };
+    try scene.fillCircle(input, 0.011, palette.chrome_light);
+    try scene.circle(input, 0.011, palette.bright);
+    try scene.fillCircle(input, 0.005, palette.background);
+    try scene.line(.{ power[0] + 0.028, status.center()[1] }, .{ input[0] - 0.028, status.center()[1] }, palette.faint);
 }
 
 fn drawMainConnections(scene: *Scene, board: Bounds, pedals: []const Bounds, rig: *const demo.Rig) !void {
@@ -643,39 +858,39 @@ fn drawLightingLabFrame(scene: *Scene) !void {
     const viewport = Bounds{ .left = -0.98, .bottom = -0.84, .width = 1.96, .height = 1.54 };
     try scene.fillRectangle(viewport, Color{ .r = 0.010, .g = 0.016, .b = 0.016 });
     try scene.rectangle(viewport, palette.faint);
-    try scene.fillRectangle(header, palette.chrome);
-    try scene.rectangle(header, palette.faint);
+    try scene.gradientRectangle(header, palette.chrome, palette.chrome_top);
+    try scene.fillRectangle(.{ .left = header.left, .bottom = header.bottom, .width = header.width, .height = 0.006 }, palette.background);
     const comparison_split_x: f32 = 0;
     try scene.line(.{ comparison_split_x, viewport.bottom }, .{ comparison_split_x, viewport.top() }, palette.faint);
 
     const back = Bounds{ .left = header.left + 0.015, .bottom = header.bottom + 0.025, .width = 0.085, .height = header.height - 0.050 };
-    try scene.fillRectangle(back, palette.surface);
-    try scene.rectangle(back, palette.amber);
+    try scene.fillRoundedRectangle(back, 0.016, palette.surface_active);
+    try scene.roundedRectangle(back, 0.016, palette.amber_soft);
     try scene.line(.{ back.left + 0.056, back.bottom + 0.014 }, .{ back.left + 0.026, back.center()[1] }, palette.bright);
     try scene.line(.{ back.left + 0.026, back.center()[1] }, .{ back.left + 0.056, back.top() - 0.014 }, palette.bright);
     try scene.addHitRegion(back, .show_amplifier);
 
     const live = Bounds{ .left = back.right() + 0.022, .bottom = back.bottom, .width = 0.35, .height = back.height };
-    try scene.fillRectangle(live, palette.surface);
-    try scene.rectangle(live, palette.faint);
+    try scene.fillRoundedRectangle(live, 0.016, palette.surface);
+    try scene.roundedRectangle(live, 0.016, palette.faint);
     try scene.fillCircle(.{ live.left + 0.030, live.center()[1] }, 0.010, palette.green);
     try scene.line(.{ live.left + 0.055, live.center()[1] }, .{ live.right() - 0.020, live.center()[1] }, palette.mid);
 
-    const three_d_badge = Bounds{ .left = -0.46, .bottom = back.bottom, .width = 0.16, .height = back.height };
-    const layer_badge = Bounds{ .left = -0.27, .bottom = back.bottom, .width = 0.19, .height = back.height };
+    const three_d_badge = Bounds{ .left = -0.22, .bottom = back.bottom, .width = 0.16, .height = back.height };
+    const layer_badge = Bounds{ .left = -0.04, .bottom = back.bottom, .width = 0.19, .height = back.height };
     try drawComparisonBadge(scene, three_d_badge, false);
     try drawComparisonBadge(scene, layer_badge, true);
 
     const strip = Bounds{ .left = header.right() - 0.30, .bottom = back.bottom, .width = 0.27, .height = back.height };
-    try scene.fillRectangle(strip, palette.surface);
-    try scene.rectangle(strip, palette.faint);
+    try scene.fillRoundedRectangle(strip, 0.016, palette.surface);
+    try scene.roundedRectangle(strip, 0.016, palette.faint);
     try scene.line(.{ strip.left + 0.025, strip.center()[1] }, .{ strip.right() - 0.025, strip.center()[1] }, palette.bright);
     try scene.circle(.{ strip.left + strip.width * 0.66, strip.center()[1] }, 0.014, palette.amber);
 }
 
 fn drawComparisonBadge(scene: *Scene, bounds: Bounds, layered: bool) !void {
-    try scene.fillRectangle(bounds, palette.surface);
-    try scene.rectangle(bounds, if (layered) palette.bright else palette.amber);
+    try scene.fillRoundedRectangle(bounds, 0.016, if (layered) palette.surface else palette.surface_active);
+    try scene.roundedRectangle(bounds, 0.016, if (layered) palette.mid else palette.amber_soft);
     const height = bounds.height * 0.54;
     const width = height * 0.43;
     var x = bounds.left + 0.025;
@@ -953,54 +1168,92 @@ fn drawBrowser(scene: *Scene, bounds: Bounds) !void {
 }
 
 fn drawTransport(scene: *Scene, bounds: Bounds) !void {
-    try scene.fillRectangle(bounds, palette.chrome);
-    try scene.line(.{ bounds.left, bounds.top() }, .{ bounds.right(), bounds.top() }, palette.faint);
+    try scene.gradientRectangle(bounds, palette.chrome, palette.chrome_top);
+    try scene.fillRectangle(.{ .left = bounds.left, .bottom = bounds.top() - 0.006, .width = bounds.width, .height = 0.006 }, palette.background);
+    try scene.line(.{ bounds.left, bounds.top() - 0.006 }, .{ bounds.right(), bounds.top() - 0.006 }, palette.faint);
 
-    const meter_left = Bounds{ .left = bounds.left + 0.020, .bottom = bounds.bottom + 0.032, .width = 0.18, .height = 0.050 };
-    try drawMeter(scene, meter_left, 0.66);
+    const panel_bottom = bounds.bottom + 0.020;
+    const panel_height = bounds.height - 0.040;
+    const input_panel = Bounds{ .left = bounds.left + 0.018, .bottom = panel_bottom, .width = 0.335, .height = panel_height };
+    try drawIoPanel(scene, input_panel, 0.66, false);
 
-    const controls = Bounds{ .left = bounds.left + 0.25, .bottom = bounds.bottom + 0.016, .width = 0.44, .height = bounds.height - 0.032 };
-    try scene.fillRectangle(controls, palette.surface);
-    try scene.rectangle(controls, palette.faint);
-    const record = [2]f32{ controls.left + 0.085, controls.center()[1] };
-    try scene.fillCircle(record, 0.022, palette.bright);
-    const play_center = [2]f32{ controls.left + 0.16, controls.center()[1] };
-    try scene.triangle(.{ play_center[0] - 0.015, play_center[1] - 0.024 }, .{ play_center[0] - 0.015, play_center[1] + 0.024 }, .{ play_center[0] + 0.025, play_center[1] }, palette.bright);
-    try scene.line(.{ controls.left + 0.235, controls.center()[1] - 0.022 }, .{ controls.left + 0.235, controls.center()[1] + 0.022 }, palette.bright);
-    try scene.line(.{ controls.left + 0.245, controls.center()[1] }, .{ controls.left + 0.280, controls.center()[1] + 0.022 }, palette.bright);
-    try scene.line(.{ controls.left + 0.245, controls.center()[1] }, .{ controls.left + 0.280, controls.center()[1] - 0.022 }, palette.bright);
-    try scene.circle(.{ controls.left + 0.345, controls.center()[1] }, 0.023, palette.amber);
-    try scene.line(.{ controls.left + 0.327, controls.center()[1] + 0.015 }, .{ controls.left + 0.360, controls.center()[1] + 0.015 }, palette.amber);
+    const transport = Bounds{ .left = bounds.center()[0] - 0.365, .bottom = panel_bottom, .width = 0.535, .height = panel_height };
+    try scene.fillRoundedRectangle(transport, 0.022, palette.surface);
+    try scene.roundedRectangle(transport, 0.022, palette.faint);
+    const spacing = transport.width / 6.0;
+    const y = transport.center()[1];
+    const record = [2]f32{ transport.left + spacing, y };
+    try scene.fillCircle(record, 0.014, Color{ .r = 0.50, .g = 0.10, .b = 0.075 });
+    try scene.circle(record, 0.014, Color{ .r = 1.0, .g = 0.31, .b = 0.23 });
 
-    const display = Bounds{ .left = controls.right() + 0.030, .bottom = controls.bottom, .width = 0.33, .height = controls.height };
-    try scene.fillRectangle(display, palette.surface);
-    try scene.rectangle(display, palette.faint);
-    var x = display.left + 0.030;
+    const previous = [2]f32{ transport.left + spacing * 2.0, y };
+    try scene.line(.{ previous[0] - 0.017, previous[1] - 0.017 }, .{ previous[0] - 0.017, previous[1] + 0.017 }, palette.mid);
+    try scene.triangle(.{ previous[0] - 0.010, previous[1] }, .{ previous[0] + 0.016, previous[1] + 0.018 }, .{ previous[0] + 0.016, previous[1] - 0.018 }, palette.bright);
+
+    const play = [2]f32{ transport.left + spacing * 3.0, y };
+    try scene.fillCircle(play, 0.034, palette.amber_soft);
+    try scene.circle(play, 0.034, palette.amber);
+    try scene.triangle(.{ play[0] - 0.009, play[1] - 0.016 }, .{ play[0] - 0.009, play[1] + 0.016 }, .{ play[0] + 0.018, play[1] }, palette.bright);
+
+    const next = [2]f32{ transport.left + spacing * 4.0, y };
+    try scene.triangle(.{ next[0] + 0.010, next[1] }, .{ next[0] - 0.016, next[1] + 0.018 }, .{ next[0] - 0.016, next[1] - 0.018 }, palette.bright);
+    try scene.line(.{ next[0] + 0.017, next[1] - 0.017 }, .{ next[0] + 0.017, next[1] + 0.017 }, palette.mid);
+
+    const loop = [2]f32{ transport.left + spacing * 5.0, y };
+    try scene.circle(loop, 0.020, palette.amber);
+    try scene.triangle(.{ loop[0] + 0.012, loop[1] + 0.018 }, .{ loop[0] + 0.026, loop[1] + 0.013 }, .{ loop[0] + 0.017, loop[1] + 0.005 }, palette.amber);
+
+    const display = Bounds{ .left = bounds.center()[0] + 0.205, .bottom = panel_bottom, .width = 0.335, .height = panel_height };
+    try scene.fillRoundedRectangle(display, 0.018, palette.background);
+    try scene.roundedRectangle(display, 0.018, palette.faint);
+    try scene.fillCircle(.{ display.left + 0.022, display.top() - 0.020 }, 0.004, palette.green);
+    var x = display.left + 0.040;
     const digits = [_]u8{ 0, 0, 1, 1, 0, 1 };
     for (digits, 0..) |digit, index| {
-        try drawDigit(scene, .{ x, display.bottom + 0.020 }, 0.024, 0.056, digit, if (index < 2) palette.bright else palette.mid);
-        x += 0.040;
-        if (index == 1 or index == 3) x += 0.012;
+        try drawDigit(scene, .{ x, display.bottom + 0.021 }, 0.021, 0.052, digit, if (index < 4) palette.bright else palette.mid);
+        x += 0.035;
+        if (index == 1 or index == 3) {
+            try scene.fillCircle(.{ x - 0.006, display.center()[1] + 0.010 }, 0.003, palette.amber_soft);
+            try scene.fillCircle(.{ x - 0.006, display.center()[1] - 0.010 }, 0.003, palette.amber_soft);
+            x += 0.006;
+        }
     }
 
-    const meter_right = Bounds{ .left = bounds.right() - 0.205, .bottom = bounds.bottom + 0.032, .width = 0.18, .height = 0.050 };
-    try drawMeter(scene, meter_right, 0.78);
+    const output_panel = Bounds{ .left = bounds.right() - 0.353, .bottom = panel_bottom, .width = 0.335, .height = panel_height };
+    try drawIoPanel(scene, output_panel, 0.78, true);
+}
+
+fn drawIoPanel(scene: *Scene, bounds: Bounds, level: f32, output: bool) !void {
+    try scene.fillRoundedRectangle(bounds, 0.018, palette.surface);
+    try scene.roundedRectangle(bounds, 0.018, palette.faint);
+    const knob_x = if (output) bounds.right() - 0.036 else bounds.left + 0.036;
+    const knob = [2]f32{ knob_x, bounds.center()[1] };
+    try scene.fillCircle(knob, 0.021, palette.chrome_light);
+    try scene.circle(knob, 0.021, palette.mid);
+    try scene.line(knob, .{ knob[0] + 0.010, knob[1] + 0.014 }, palette.bright);
+    const meter = Bounds{
+        .left = if (output) bounds.left + 0.018 else bounds.left + 0.070,
+        .bottom = bounds.bottom + 0.022,
+        .width = bounds.width - 0.088,
+        .height = bounds.height - 0.044,
+    };
+    try drawMeter(scene, meter, level);
 }
 
 fn drawMeter(scene: *Scene, bounds: Bounds, level: f32) !void {
-    try scene.fillRectangle(bounds, palette.surface);
-    try scene.rectangle(bounds, palette.faint);
-    const bar_count = 14;
+    try scene.fillRoundedRectangle(bounds, 0.010, palette.background);
+    try scene.roundedRectangle(bounds, 0.010, palette.faint);
+    const bar_count = 18;
     var index: usize = 0;
     while (index < bar_count) : (index += 1) {
         const active = @as(f32, @floatFromInt(index)) / bar_count < level;
         const bar = Bounds{
-            .left = bounds.left + 0.006 + @as(f32, @floatFromInt(index)) * (bounds.width - 0.012) / bar_count,
-            .bottom = bounds.bottom + 0.010,
-            .width = (bounds.width - 0.020) / bar_count,
-            .height = bounds.height - 0.020,
+            .left = bounds.left + 0.008 + @as(f32, @floatFromInt(index)) * (bounds.width - 0.016) / bar_count,
+            .bottom = bounds.bottom + 0.008,
+            .width = (bounds.width - 0.026) / bar_count,
+            .height = bounds.height - 0.016,
         };
-        try scene.fillRectangle(bar, if (active) (if (index > 10) palette.amber else palette.green) else palette.faint);
+        try scene.fillRoundedRectangle(bar, 0.002, if (active) (if (index > 14) palette.amber else palette.green) else palette.faint);
     }
 }
 
@@ -1111,7 +1364,17 @@ test "primary rig layout has no browser or signal-chain panels" {
 
     var scene = Scene{};
     try projectView(&scene, &demo.rig, .rig);
-    try std.testing.expectEqual(@as(usize, 0), scene.hits().len);
+    try std.testing.expectEqual(@as(usize, 3), scene.hits().len);
+    try std.testing.expectEqual(Action.show_rig, scene.hits()[0].action);
+    try std.testing.expectEqual(Action.show_amplifier, scene.hits()[1].action);
+    try std.testing.expectEqual(Action.show_lighting_lab, scene.hits()[2].action);
+}
+
+test "focused amplifier projection exposes a compact rig return" {
+    var scene = Scene{};
+    try projectStudioView(&scene, &demo.rig, .rig, true);
+    try std.testing.expectEqual(@as(usize, 4), scene.hits().len);
+    try std.testing.expectEqual(Action.show_rig, scene.hits()[3].action);
 }
 
 fn expectFiniteVertex(item: Vertex) !void {

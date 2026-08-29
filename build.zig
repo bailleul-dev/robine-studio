@@ -14,6 +14,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const platform_audio = b.createModule(.{
+        .root_source_file = b.path("src/platform/audio.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const platform = b.createModule(.{
         .root_source_file = b.path("src/platform/macos/app.zig"),
         .target = target,
@@ -63,6 +69,9 @@ pub fn build(b: *std.Build) void {
 
     const tests = b.addTest(.{ .root_module = robine });
     const run_tests = b.addRunArtifact(tests);
-    const test_step = b.step("test", "Run Robine model and UI tests");
+    const platform_audio_tests = b.addTest(.{ .root_module = platform_audio });
+    const run_platform_audio_tests = b.addRunArtifact(platform_audio_tests);
+    const test_step = b.step("test", "Run Robine model, UI, and audio contract tests");
     test_step.dependOn(&run_tests.step);
+    test_step.dependOn(&run_platform_audio_tests.step);
 }
