@@ -1,12 +1,13 @@
-# UI-010: Progressive idle ray tracing
+# UI-010: Continuous ray-traced contact shading
 
 Status: Draft
 
 ## Summary
 
-Robine keeps rasterization as the immediate and portable rendering path. When a
-3D equipment view becomes static, a bounded Metal ray-tracing pass progressively
-improves contact shading without consuming a permanent per-frame GPU budget.
+Robine keeps rasterization as the portable base rendering path. On a capable
+Metal device, a ray-traced ambient-visibility pass is present on every rendered
+3D equipment frame so camera movement and equipment interaction never switch
+between two visibly different lighting models.
 
 The first vertical slice computes ambient visibility only. It is deliberately
 not a full path tracer: direct lighting, materials, reflections, tone mapping,
@@ -14,40 +15,40 @@ depth, and the existing shadow map remain in the raster pipeline.
 
 ## Runtime policy
 
-The renderer MUST obey this state machine:
+The renderer MUST obey this state machine on a capable device:
 
 ```text
-camera or geometry changes
-        |
-        v
-raster-only interaction ---- 200 ms idle ----> progressive AO
-        ^                                          |
-        |                                          v
-        +------ any scene change -------- 24 samples reached
-                                                   |
-                                                   v
-                                            converged / no RT work
+every 3D frame
+      |
+      +-- camera moving --> overwrite AO from the current camera
+      |
+      +-- camera static --> rolling temporal accumulation (up to 24 samples)
+      |
+      +-- composite AO over the raster result in the same frame
 ```
 
-- Camera motion MUST display the normal raster/MSAA result immediately.
-- Accumulation MUST restart after a camera or geometry change.
-- Ray-traced work MUST begin only after 200 milliseconds of stable view state.
+- Camera motion MUST retain ray-traced contact shading. It MUST NOT fall back to
+  a raster-only image.
+- A moving camera MUST replace the previous accumulation every frame so contact
+  shading never ghosts from an obsolete projection.
+- Static-camera accumulation MUST restart after a camera or geometry change.
 - The MVP MUST trace four ambient-visibility rays per pixel per accumulation
   frame and average them before temporal accumulation.
-- The accumulation MUST stop after 24 samples per pixel.
-- A converged view MUST issue no further ray-tracing compute dispatches.
-- Presentation rasterization MAY continue for meters, automation, and other
-  dynamic plugin UI elements.
+- Static views MUST maintain a rolling 24-sample history. New samples replace
+  old influence rather than stopping compute dispatches after convergence.
+- Every pedalboard frame MUST issue one ray-tracing compute dispatch before the
+  composite pass while the capability remains available.
 
 ## Resolution and composition
 
 The ambient-visibility buffer uses half the width and half the height of the 3D
 viewport. It is a single-channel floating-point texture, linearly reconstructed
 over the raster result. A bounded 3 by 3 spatial filter suppresses residual
-Monte-Carlo noise. Primary camera rays sample pixel centers without temporal
-jitter so equipment silhouettes remain stable. The composite is bounded to
-contact-darkening only and MUST NOT replace direct-light shadows or globally
-change the material palette.
+Monte-Carlo noise. A monotonically changing sample sequence prevents the
+rolling history from repeatedly tracing identical rays. Primary camera rays
+sample pixel centers without temporal jitter so equipment silhouettes remain
+stable. The composite is bounded to contact-darkening only and MUST NOT replace
+direct-light shadows or globally change the material palette.
 
 The current maximum occlusion distance is 1.35 scene units. Primary rays use
 the semantic camera pose and field of view; they do not infer a position from
@@ -90,9 +91,9 @@ implement the same policy with another hardware API or select the raster fallbac
 ## Plugin budget
 
 This feature runs on the GPU and never enters the real-time audio callback. Its
-work is both spatially reduced and temporally bounded. The plugin host MUST be
-able to disable the enhancement through a future quality profile without
-changing equipment state or sound.
+per-frame work is spatially bounded by the half-resolution buffer and four AO
+rays per pixel. The plugin host MUST be able to disable the enhancement through
+a future quality profile without changing equipment state or sound.
 
 The renderer SHOULD expose timings before increasing the sample count, adding
 bounces, or tracing glossy reflections. Audio stability takes precedence over
@@ -100,11 +101,12 @@ visual convergence.
 
 ## Acceptance criteria
 
-- Moving from pedalboard view to amplifier view shows continuous raster output
-  throughout the camera transition.
-- No ray-tracing dispatch occurs during the transition or its 200 ms idle gate.
-- A static view progressively gains contact occlusion over at most 24 frames.
-- The ray-tracing pass stops dispatching after the 24th sample.
+- Moving from pedalboard view to amplifier view retains ray-traced contact
+  shading throughout the camera transition.
+- A capable device issues one AO compute dispatch for every pedalboard frame.
+- A moving camera uses only samples generated from its current pose.
+- A static view converges into a rolling 24-sample history without disabling the
+  compute pass or composite.
 - Returning to the pedalboard resets and recomputes the accumulation.
 - Resizing the fixed-aspect window reallocates a correctly sized half-resolution
   texture and restarts accumulation.

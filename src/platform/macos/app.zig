@@ -101,7 +101,8 @@ const RayTracingRenderState = struct {
     texture_width: usize = 0,
     texture_height: usize = 0,
     sample_count: u32 = 0,
-    idle_started_at: f64,
+    sequence_index: u32 = 0,
+    camera_was_moving: bool = false,
 };
 
 const AccelerationStructureSizes = extern struct {
@@ -118,7 +119,6 @@ const RayUniforms = extern struct {
     sample_dimensions: [4]u32,
 };
 
-const progressive_ao_idle_delay_seconds: f64 = 0.2;
 const progressive_ao_sample_limit: u32 = 24;
 
 const LightingLabRenderState = struct {
@@ -557,7 +557,7 @@ const ray_tracing_shader_source =
     \\    uint2 gid [[thread_position_in_grid]]) {
     \\    uint2 dimensions = uniforms.sample_dimensions.yz;
     \\    if (gid.x >= dimensions.x || gid.y >= dimensions.y) return;
-    \\    uint seed = gid.x + gid.y * dimensions.x + uniforms.sample_dimensions.x * 0x9e3779b9u;
+    \\    uint seed = gid.x + gid.y * dimensions.x + uniforms.sample_dimensions.w * 0x9e3779b9u;
     \\    float2 uv = (float2(gid) + 0.5) / float2(dimensions);
     \\    float2 screen = float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
     \\    float tan_half_fov = uniforms.camera_fov.w;
@@ -908,7 +908,6 @@ fn createRayTracingRenderState(
         .compute_pipeline = compute_pipeline,
         .composite_pipeline = composite_pipeline,
         .acceleration_structure = try buildAccelerationStructure(device, command_queue, equipment_buffer, equipment_count),
-        .idle_started_at = CACurrentMediaTime(),
     };
 }
 
@@ -1063,7 +1062,7 @@ fn replaceGeometry(state: *RenderState, geometry: Geometry) !void {
             ray_tracing.acceleration_structure = new_acceleration_structure;
         }
         ray_tracing.sample_count = 0;
-        ray_tracing.idle_started_at = state.camera_transition.started_at + state.camera_transition.duration;
+        ray_tracing.camera_was_moving = false;
     }
 }
 
@@ -1161,7 +1160,7 @@ fn drawState(view: Object, state: *RenderState) !void {
     }
 
     if (state.mode == .pedalboard_3d) {
-        try encodeProgressiveAo(command_buffer, state, pedalboard_camera, pedalboard_viewport, now);
+        try encodeContinuousAo(command_buffer, state, pedalboard_camera, pedalboard_viewport, now);
     }
 
     const encoder = try send1(Object, Object, command_buffer, "renderCommandEncoderWithDescriptor:", descriptor);
@@ -1212,7 +1211,7 @@ fn drawState(view: Object, state: *RenderState) !void {
     try send0(void, command_buffer, "commit");
 }
 
-fn encodeProgressiveAo(
+fn encodeContinuousAo(
     command_buffer: Object,
     state: *RenderState,
     camera: pedalboard_3d.CameraPose,
@@ -1221,13 +1220,11 @@ fn encodeProgressiveAo(
 ) !void {
     const ray_tracing = if (state.ray_tracing) |*value| value else return;
     const transition_end = state.camera_transition.started_at + state.camera_transition.duration;
-    if (now < transition_end) {
+    const camera_is_moving = now < transition_end;
+    if (camera_is_moving or ray_tracing.camera_was_moving) {
         ray_tracing.sample_count = 0;
-        ray_tracing.idle_started_at = transition_end;
-        return;
     }
-    if (now < ray_tracing.idle_started_at + progressive_ao_idle_delay_seconds) return;
-    if (ray_tracing.sample_count >= progressive_ao_sample_limit) return;
+    ray_tracing.camera_was_moving = camera_is_moving;
 
     const texture_width: usize = @max(1, @as(usize, @intFromFloat(@floor(viewport.width * 0.5))));
     const texture_height: usize = @max(1, @as(usize, @intFromFloat(@floor(viewport.height * 0.5))));
@@ -1244,7 +1241,14 @@ fn encodeProgressiveAo(
         ray_tracing.sample_count = 0;
     }
 
-    const uniforms = rayUniforms(camera, @floatCast(viewport.width / viewport.height), ray_tracing.sample_count, texture_width, texture_height);
+    const uniforms = rayUniforms(
+        camera,
+        @floatCast(viewport.width / viewport.height),
+        @min(ray_tracing.sample_count, progressive_ao_sample_limit - 1),
+        ray_tracing.sequence_index,
+        texture_width,
+        texture_height,
+    );
     const encoder = try send0(Object, command_buffer, "computeCommandEncoder");
     try send1(void, Object, encoder, "setComputePipelineState:", ray_tracing.compute_pipeline);
     try send3(void, Object, usize, usize, encoder, "setBuffer:offset:atIndex:", state.equipment_buffer, 0, 0);
@@ -1257,13 +1261,15 @@ fn encodeProgressiveAo(
         .depth = 1,
     }, .{ .width = 8, .height = 8, .depth = 1 });
     try send0(void, encoder, "endEncoding");
-    ray_tracing.sample_count += 1;
+    ray_tracing.sample_count = @min(ray_tracing.sample_count + 1, progressive_ao_sample_limit);
+    ray_tracing.sequence_index +%= 1;
 }
 
 fn rayUniforms(
     camera: pedalboard_3d.CameraPose,
     aspect: f32,
     sample_index: u32,
+    sequence_index: u32,
     width: usize,
     height: usize,
 ) RayUniforms {
@@ -1284,7 +1290,7 @@ fn rayUniforms(
         .forward_aspect = .{ forward[0], forward[1], forward[2], aspect },
         .right_min_distance = .{ right[0], right[1], right[2], 0.04 },
         .up_max_distance = .{ up[0], up[1], up[2], 1.35 },
-        .sample_dimensions = .{ sample_index, @intCast(width), @intCast(height), progressive_ao_sample_limit },
+        .sample_dimensions = .{ sample_index, @intCast(width), @intCast(height), sequence_index },
     };
 }
 

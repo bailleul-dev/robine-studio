@@ -115,9 +115,10 @@ support fall back to 2x and then 1x. The shadow-only pass remains single-sampled
 Backend-specific objects remain inside `platform`; declarative mesh, material,
 and profile data remain inside `ui`.
 
-UI-010 adds optional progressive contact occlusion while a view is static. This
-compute path uses Metal ray-intersection APIs but does not assume dedicated
-ray-tracing hardware; raster lighting remains the canonical fallback.
+UI-010 adds continuous contact occlusion on capable devices, including during
+camera motion. This compute path uses Metal ray-intersection APIs but does not
+assume dedicated ray-tracing hardware; raster lighting remains the canonical
+fallback on unsupported devices.
 
 ## Reference comparison view
 
