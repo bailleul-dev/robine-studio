@@ -1,10 +1,10 @@
 const std = @import("std");
 
-const Complex = struct {
+pub const Complex = struct {
     re: f32 = 0.0,
     im: f32 = 0.0,
 
-    fn multiply(a: Complex, b: Complex) Complex {
+    pub fn multiply(a: Complex, b: Complex) Complex {
         return .{
             .re = a.re * b.re - a.im * b.im,
             .im = a.re * b.im + a.im * b.re,
@@ -172,7 +172,7 @@ pub const Convolver = struct {
     }
 };
 
-fn fft(values: []Complex, inverse: bool) void {
+pub fn fft(values: []Complex, inverse: bool) void {
     std.debug.assert(std.math.isPowerOfTwo(values.len));
     var reversed: usize = 0;
     for (1..values.len) |index| {

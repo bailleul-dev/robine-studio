@@ -1,6 +1,6 @@
 # AUD-009: Effects loop and Skysurfer reverb
 
-Status: Accepted
+Status: Implemented
 
 ## Summary
 
@@ -41,8 +41,9 @@ an authored x/y position.
   Spring/Plate/Hall three-position selector.
 - Spring MUST remain unavailable as an audio variant because the archive only
   supplies Hall and Plate responses.
-- Controls and footswitch MUST remain non-interactive until the stereo reverb
-  resolver, transitions, gain policy, and real-time budget are implemented.
+- The footswitch and blue LED MUST share one atomic bypass state and use a 5 ms
+  transition. Continuous controls and the response selector remain
+  non-interactive until the discrete resolver is implemented.
 
 ## Response contract
 
@@ -59,12 +60,16 @@ an authored x/y position.
   The real-time path MUST allocate no memory, access no files, lock no mutex, or
   log.
 
-## Activation boundary
+## Activation and implementation
 
-The model, assets, and second-row projection are implemented first. Audible
-activation is deferred to the NAM/convolution optimization milestone. Robine
-MUST benchmark the complete full-quality chain and MUST NOT silently shorten an
-IR, fold it to mono, or select lightweight NAM submodels to meet the deadline.
+The Hall 3 Medium response is audibly active. A shared-input hybrid stereo
+convolver processes a 2,048-frame early region with 64-frame partitions and the
+remaining response with 512-frame partitions. It introduces 64 frames of
+declared latency, preserves all 268,668 stereo frames, performs no real-time
+allocation, and feeds two independent full cabinet convolvers. The complete
+full-quality benchmark reaches `3.88x` real time on the reference M1 with zero
+measured deadline misses; no IR truncation, mono fold, or lightweight NAM
+selection is used.
 
 ## Rights
 

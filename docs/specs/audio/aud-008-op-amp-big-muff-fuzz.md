@@ -1,15 +1,14 @@
 # AUD-008: Op-Amp Big Muff fuzz
 
-Status: Accepted
+Status: Implemented
 
 ## Summary
 
 The green pedal describes the supplied Electro-Harmonix Op-Amp Big Muff capture
 grid. The obsolete coral/red fuzz placeholder is removed from the rig. The
 catalog default uses the median Tone and Sustain capture while preserving all
-35 captures for a future discrete resolver. Audible activation follows the NAM
-engine optimization milestone rather than adding another deadline-violating
-stage to the current Core Audio callback.
+35 captures for a future discrete resolver. It is active in the full-quality
+real-time chain.
 
 ## Model mapping
 
@@ -24,9 +23,8 @@ stage to the current Core Audio callback.
   defines deterministic snapping and transitions.
 - Tone Bypass captures MUST remain explicit discrete variants; Robine MUST NOT
   pretend they are positions of the continuous Tone control.
-- Until the NAM engine meets the complete-chain deadline, Studio MUST project
-  the Big Muff footswitch and LED as disabled and MUST NOT offer a false audible
-  interaction.
+- Studio MUST project the Big Muff footswitch and LED from the same atomic state
+  observed by audio, with a 5 ms wet/dry bypass transition.
 
 ## Capture grid
 
@@ -43,12 +41,12 @@ WaveNet submodels. All embedded training metadata records ignored data checks.
 The eventual production benchmark MUST evaluate the full signal order:
 
 ```text
-WAV -> SP Compressor -> Tumnus Deluxe -> Op-Amp Big Muff -> King of Tone -> Dumble -> cabinet IR
+WAV -> SP Compressor -> Tumnus Deluxe -> Op-Amp Big Muff -> King of Tone -> Dumble -> Skysurfer -> cabinet IR
 ```
 
-Robine MUST optimize the full 8-channel NAM path or move it outside the native
-audio callback behind a bounded, latency-declared pipeline. It MUST NOT meet the
-deadline by silently selecting the 3-channel submodel.
+The implemented benchmark evaluates all five full 8-channel A2 models. On the
+reference M1, the complete stereo production chain reaches `3.88x` real time at
+512 frames without selecting a 3-channel submodel.
 
 ## Rights
 

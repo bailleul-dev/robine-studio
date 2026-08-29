@@ -3,7 +3,7 @@ pub const input_wav = @embedFile("fixtures/inputs/celestial-guitar-48k-mono.wav"
 
 /// Fixed monitor headroom for the capture-only development chain. Continuous
 /// output level controls will replace this when live routing is introduced.
-pub const monitor_output_gain: f32 = 0.5;
+pub const monitor_output_gain: f32 = 0.025;
 
 /// Initial full-quality Dumble capture.
 pub const default_nam = @embedFile(

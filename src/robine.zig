@@ -12,6 +12,7 @@ pub const audio = struct {
     pub const mode_switch = @import("audio/mode_switch.zig");
     pub const nam = @import("audio/nam.zig");
     pub const processor = @import("audio/processor.zig");
+    pub const reverb = @import("audio/reverb.zig");
     pub const wav = @import("audio/wav.zig");
 };
 
@@ -28,6 +29,7 @@ test {
     _ = audio.mode_switch;
     _ = audio.nam;
     _ = audio.processor;
+    _ = audio.reverb;
     _ = audio.wav;
     _ = model.demo;
     _ = ui.lighting_lab;

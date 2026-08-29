@@ -23,9 +23,7 @@ const Format = struct {
     bits_per_sample: u16,
 };
 
-/// Decode a RIFF/WAVE PCM fixture into normalized interleaved f32 samples.
-/// The first audio milestone deliberately accepts only integer PCM; unsupported
-/// assets fail during startup rather than entering a fallback conversion path.
+/// Decode a RIFF/WAVE PCM or IEEE Float32 fixture into interleaved f32 samples.
 pub fn decode(allocator: std.mem.Allocator, bytes: []const u8) !Audio {
     if (bytes.len < 12 or
         !std.mem.eql(u8, bytes[0..4], "RIFF") or
@@ -63,9 +61,12 @@ pub fn decode(allocator: std.mem.Allocator, bytes: []const u8) !Audio {
 
     const fmt = format orelse return error.MissingWaveFormat;
     const data = audio_bytes orelse return error.MissingWaveData;
-    if (fmt.encoding != 1) return error.UnsupportedWaveEncoding;
+    if (fmt.encoding != 1 and fmt.encoding != 3) return error.UnsupportedWaveEncoding;
     if (fmt.channels == 0 or fmt.sample_rate == 0) return error.InvalidWaveFormat;
-    if (fmt.bits_per_sample != 16 and fmt.bits_per_sample != 24 and fmt.bits_per_sample != 32) {
+    if (fmt.encoding == 3 and fmt.bits_per_sample != 32) return error.UnsupportedWaveBitDepth;
+    if (fmt.encoding == 1 and fmt.bits_per_sample != 16 and
+        fmt.bits_per_sample != 24 and fmt.bits_per_sample != 32)
+    {
         return error.UnsupportedWaveBitDepth;
     }
 
@@ -81,7 +82,9 @@ pub fn decode(allocator: std.mem.Allocator, bytes: []const u8) !Audio {
     errdefer allocator.free(samples);
     for (samples, 0..) |*sample, index| {
         const source = data[index * bytes_per_sample ..][0..bytes_per_sample];
-        sample.* = switch (fmt.bits_per_sample) {
+        sample.* = if (fmt.encoding == 3)
+            @bitCast(readU32(source[0..4]))
+        else switch (fmt.bits_per_sample) {
             16 => @as(f32, @floatFromInt(@as(i16, @bitCast(readU16(source[0..2]))))) / 32_768.0,
             24 => decodePcm24(source[0..3]),
             32 => @as(f32, @floatFromInt(@as(i32, @bitCast(readU32(source[0..4]))))) / 2_147_483_648.0,
@@ -117,4 +120,20 @@ test "PCM24 conversion preserves signed full scale and zero" {
     try std.testing.expectApproxEqAbs(@as(f32, -1.0), decodePcm24(&.{ 0x00, 0x00, 0x80 }), 0.000001);
     try std.testing.expectEqual(@as(f32, 0.0), decodePcm24(&.{ 0x00, 0x00, 0x00 }));
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), decodePcm24(&.{ 0xff, 0xff, 0x7f }), 0.000001);
+}
+
+test "IEEE Float32 stereo WAV preserves interleaved samples" {
+    const bytes = [_]u8{
+        'R',  'I',  'F', 'F',  52, 0,    0,    0,    'W', 'A', 'V',  'E',
+        'f',  'm',  't', ' ',  16, 0,    0,    0,    3,   0,   2,    0,
+        0x80, 0xbb, 0,   0,    0,  0xdc, 5,    0,    8,   0,   32,   0,
+        'd',  'a',  't', 'a',  16, 0,    0,    0,    0,   0,   0,    0x3f,
+        0,    0,    0,   0xbf, 0,  0,    0x80, 0x3e, 0,   0,   0x80, 0xbe,
+    };
+    var audio = try decode(std.testing.allocator, &bytes);
+    defer audio.deinit(std.testing.allocator);
+    try std.testing.expectEqual(@as(u16, 2), audio.channels);
+    try std.testing.expectEqual(@as(u32, 48_000), audio.sample_rate);
+    try std.testing.expectEqual(@as(usize, 2), audio.frames());
+    try std.testing.expectEqualSlices(f32, &.{ 0.5, -0.5, 0.25, -0.25 }, audio.samples);
 }

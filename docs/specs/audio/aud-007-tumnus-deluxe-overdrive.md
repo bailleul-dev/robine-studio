@@ -1,14 +1,13 @@
 # AUD-007: Tumnus Deluxe overdrive
 
-Status: Accepted
+Status: Implemented
 
 ## Summary
 
 The gold single pedal describes the supplied Wampler Tumnus Deluxe capture grid.
 The catalog default uses the neutral Normal-mode capture while preserving all
-30 captures for a future discrete resolver. Real-time activation is deferred
-because the current full-quality four-NAM chain misses its deadline on the
-reference M1.
+30 captures for a future discrete resolver. The neutral capture is active in
+the full-quality real-time chain.
 
 ## Model mapping
 
@@ -19,10 +18,9 @@ reference M1.
 - The enclosure MUST expose five physical controls named Bass, Mids, Treble,
   Level, and Gain. They MUST remain non-interactive until the capture-grid
   resolver defines deterministic snapping and transitions.
-- Until the NAM engine meets the full-chain deadline, Studio MUST project the
-  Tumnus footswitch and amber LED as disabled and MUST NOT offer a false audible
-  interaction.
-- Future bypass transitions MUST use the existing 5 ms wet/dry smoother.
+- Studio MUST project the Tumnus footswitch and amber LED from the same atomic
+  state observed by audio.
+- Bypass transitions MUST use the existing 5 ms wet/dry smoother.
 
 ## Capture grid
 
@@ -41,13 +39,13 @@ The target production benchmark includes the enabled Tumnus stage in signal
 order:
 
 ```text
-WAV -> SP Compressor -> Tumnus Deluxe -> King of Tone -> Dumble -> cabinet IR
+WAV -> SP Compressor -> Tumnus Deluxe -> Big Muff -> King of Tone -> Dumble -> Skysurfer -> cabinet IR
 ```
 
-The measured `ReleaseFast` experiment at 512 frames rendered 26.384 seconds of
-audio in 30.518 seconds (`0.86x` real time), with 2,467 missed block deadlines.
-Consequently, the real-time stage is not enabled. The implementation MUST keep
-reporting this limitation rather than silently selecting the 3-channel model.
+Following AUD-010, the complete five-NAM, stereo-reverb, dual-cabinet
+`ReleaseFast` chain renders 26.384 seconds of audio in 6.792 seconds on the
+reference M1 (`3.88x` real time). The embedded Tumnus evaluates its full
+8-channel A2 model; no lightweight submodel is selected.
 
 ## Rights
 

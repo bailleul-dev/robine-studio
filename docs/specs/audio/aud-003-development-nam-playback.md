@@ -5,8 +5,8 @@ Status: Implemented
 ## Summary
 
 When Robine Studio starts, it plays the deterministic mono guitar fixture once
-through the initial compressor, King of Tone, Dumble NAM capture, cabinet
-response, and the default native output. This is a development path for
+through the complete input pedal chain, Dumble NAM capture, effects-loop
+reverb, cabinet response, and the default native output. This is a development path for
 validating the real audio stack before live input, routing controls, and plugin
 hosts are introduced.
 
@@ -28,14 +28,14 @@ hosts are introduced.
 ## Startup path
 
 1. Studio decodes the embedded mono PCM24 fixture.
-2. Studio loads and prewarms the full compressor, King of Tone, and amplifier
-   NAM submodels outside the callback.
+2. Studio loads and prewarms all five full pedal/amplifier NAM submodels and
+   both convolution stages outside the callback.
 3. The native standalone backend negotiates the model's 48 kHz sample rate.
 4. The callback consumes the fixture once, processes every frame through the
-   SP Compressor, selected King of Tone capture, full amplifier NAM, and cabinet
-   convolver, and duplicates the mono result to every native output channel.
-5. Once the fixture ends, the callback flushes the cabinet tail and then emits
-   silence until Studio closes.
+   SP Compressor, Tumnus, Big Muff, selected King of Tone capture, full
+   amplifier NAM, stereo Skysurfer reverb, and two cabinet convolvers.
+5. Once the fixture ends, the callback flushes the complete reverb and cabinet
+   tails and then emits silence until Studio closes.
 
 ## Real-time requirements
 
@@ -54,11 +54,11 @@ hosts are introduced.
   NeuralAmpModelerCore for the same NAM and WAV within a bounded float tolerance.
 - WAV decoding verifies mono, 48 kHz PCM24 input.
 - The release application negotiates 48 kHz CoreAudio output and requests a
-  512-frame standalone buffer for the current three-NAM development chain.
-- The development monitor applies 6 dB of fixed output headroom after the
+  512-frame standalone buffer for the current five-NAM development chain.
+- The development monitor applies approximately 32 dB of fixed output headroom after the
   cabinet. This is output gain staging, not a substitute for a neural capture.
-- The full eight-channel compressor, King of Tone, and amplifier models plus
-  cabinet response complete in real time while the Studio window remains
-  interactive.
+- The five full eight-channel pedal/amplifier models, complete stereo reverb,
+  and dual cabinet response complete faster than real time while the Studio
+  window remains interactive.
 - The NAM module compiles to Windows COFF and Linux ELF objects using Zig target
   selection alone.

@@ -44,9 +44,9 @@ recommended behavior, and optional behavior respectively.
 | [AUD-004](audio/aud-004-cabinet-ir-convolution.md) | Audio | Implemented | Complete portable cabinet IR convolution after NAM inference |
 | [AUD-005](audio/aud-005-first-pedal-sp-compressor.md) | Audio | Implemented | First-pedal SP Compressor mapping, bypass, and LED interaction |
 | [AUD-006](audio/aud-006-king-of-tone-dual-overdrive.md) | Audio | Implemented | Violet King of Tone dual-channel NAM mapping and interaction |
-| [AUD-007](audio/aud-007-tumnus-deluxe-overdrive.md) | Audio | Accepted | Gold Tumnus Deluxe NAM grid and deferred full-quality activation |
-| [AUD-008](audio/aud-008-op-amp-big-muff-fuzz.md) | Audio | Accepted | Green Op-Amp Big Muff NAM grid and removal of the red placeholder pedal |
-| [AUD-009](audio/aud-009-effects-loop-skysurfer-reverb.md) | Audio | Accepted | Post-amplifier effects loop and stereo Skysurfer reverb IR grid |
+| [AUD-007](audio/aud-007-tumnus-deluxe-overdrive.md) | Audio | Implemented | Active full-quality gold Tumnus Deluxe NAM and click-free bypass |
+| [AUD-008](audio/aud-008-op-amp-big-muff-fuzz.md) | Audio | Implemented | Active full-quality green Op-Amp Big Muff NAM and click-free bypass |
+| [AUD-009](audio/aud-009-effects-loop-skysurfer-reverb.md) | Audio | Implemented | Active stereo Skysurfer effects loop with complete hybrid IR convolution |
 | [AUD-010](audio/aud-010-specialized-a2-inference.md) | Audio | Implemented | Portable SIMD A2-Lite and A2-Full inference faster than the reference implementation |
 | [HOST-001](hosts/host-001-runtime-hosts.md) | Hosts | Deferred | Studio, standalone, CLAP, and VST3 hosts |
 
