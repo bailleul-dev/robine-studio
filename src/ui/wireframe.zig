@@ -774,11 +774,39 @@ fn endpointPosition(endpoint: demo.Endpoint, board: Bounds, pedals: []const Boun
         .pedal_input => |index| (try projectPedalPort(pedals[index], rig.pedals[index], .input)).cable_anchor,
         .pedal_output => |index| (try projectPedalPort(pedals[index], rig.pedals[index], .output)).cable_anchor,
         .amplifier_input => blk: {
-            const last_index = rig.pedals.len - 1;
+            const last_index = lastPedalInStage(rig, .before_amplifier) orelse
+                return error.MissingPreAmplifierPedal;
+            const last_output = try projectPedalPort(pedals[last_index], rig.pedals[last_index], .output);
+            break :blk .{ board.left + 0.008, last_output.cable_anchor[1] };
+        },
+        .amplifier_output => blk: {
+            const first_index = firstPedalInStage(rig, .effects_loop) orelse
+                return error.MissingEffectsLoopPedal;
+            const first_input = try projectPedalPort(pedals[first_index], rig.pedals[first_index], .input);
+            break :blk .{ board.left + 0.008, first_input.cable_anchor[1] };
+        },
+        .cabinet_input => blk: {
+            const last_index = lastPedalInStage(rig, .effects_loop) orelse
+                return error.MissingEffectsLoopPedal;
             const last_output = try projectPedalPort(pedals[last_index], rig.pedals[last_index], .output);
             break :blk .{ board.left + 0.008, last_output.cable_anchor[1] };
         },
     };
+}
+
+fn firstPedalInStage(rig: *const demo.Rig, stage: demo.SignalStage) ?usize {
+    for (rig.pedals, 0..) |pedal, index| {
+        if (pedal.signal_stage == stage) return index;
+    }
+    return null;
+}
+
+fn lastPedalInStage(rig: *const demo.Rig, stage: demo.SignalStage) ?usize {
+    var result: ?usize = null;
+    for (rig.pedals, 0..) |pedal, index| {
+        if (pedal.signal_stage == stage) result = index;
+    }
+    return result;
 }
 
 fn projectPedalPort(bounds: Bounds, pedal: demo.Pedal, role: demo.PortRole) !PortProjection {
@@ -1299,6 +1327,7 @@ fn drawDigit(scene: *Scene, origin: [2]f32, width: f32, height: f32, digit: u8, 
 fn accentColor(accent: demo.Accent) Color {
     return switch (accent) {
         .cyan => .{ .r = 0.23, .g = 0.72, .b = 1.0 },
+        .blue => .{ .r = 0.16, .g = 0.42, .b = 1.0 },
         .green => .{ .r = 0.29, .g = 0.94, .b = 0.50 },
         .amber => .{ .r = 1.0, .g = 0.55, .b = 0.10 },
         .gold => .{ .r = 0.92, .g = 0.62, .b = 0.16 },

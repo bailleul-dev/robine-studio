@@ -83,6 +83,7 @@ pub const Presentation = enum {
 
 pub const Accent = enum {
     cyan,
+    blue,
     green,
     amber,
     gold,
@@ -91,9 +92,16 @@ pub const Accent = enum {
 };
 
 pub const AudioProcessor = struct {
-    format: enum { nam },
+    format: enum { nam, impulse_response },
     resource_id: []const u8,
     capture_variant: []const u8,
+};
+
+/// Semantic signal zones drive both DSP ordering and pedalboard lanes. They do
+/// not expose renderer coordinates to equipment descriptions.
+pub const SignalStage = enum {
+    before_amplifier,
+    effects_loop,
 };
 
 pub const ThreeWaySwitch = struct {
@@ -117,6 +125,7 @@ pub const Pedal = struct {
     indicator_colors: []const IndicatorColor = &.{},
     processor: ?AudioProcessor = null,
     mode_switch: ?ThreeWaySwitch = null,
+    signal_stage: SignalStage = .before_amplifier,
 };
 
 pub const Amplifier = struct {
@@ -134,6 +143,8 @@ pub const Endpoint = union(enum) {
     pedal_input: usize,
     pedal_output: usize,
     amplifier_input,
+    amplifier_output,
+    cabinet_input,
 };
 
 pub const Connection = struct {
@@ -169,6 +180,12 @@ const big_muff_controls = [_]Control{
     .{ .role = "volume", .label = "VOLUME", .normalized_value = 0.6, .interactive = false },
     .{ .role = "tone", .label = "TONE", .normalized_value = 0.5, .interactive = false },
     .{ .role = "sustain", .label = "SUSTAIN", .normalized_value = 0.5, .interactive = false },
+};
+
+const skysurfer_controls = [_]Control{
+    .{ .role = "reverb", .label = "REVERB", .normalized_value = 0.5, .interactive = false },
+    .{ .role = "mix", .label = "MIX", .normalized_value = 0.5, .interactive = false },
+    .{ .role = "tone", .label = "TONE", .normalized_value = 0.5, .interactive = false },
 };
 
 const king_of_tone_controls = [_]Control{
@@ -253,6 +270,28 @@ const pedals = [_]Pedal{
             .capture_variant = "both-channels-dst",
         },
     },
+    .{
+        .role = "reverb",
+        .name = "SKYSURFER REVERB",
+        .controls = &skysurfer_controls,
+        .ports = &side_ports,
+        .enclosure = enclosures.single,
+        .accent = .blue,
+        .indicator_brightness = 0.82,
+        .processor = .{
+            .format = .impulse_response,
+            .resource_id = "ir.tc-electronic-skysurfer-reverb",
+            .capture_variant = "hall-3-medium",
+        },
+        .mode_switch = .{
+            .role = "reverb_type",
+            .label = "TYPE",
+            .positions = .{ "SPRING", "PLATE", "HALL" },
+            .default_position = .high,
+            .movement = .front_to_back,
+        },
+        .signal_stage = .effects_loop,
+    },
 };
 
 const connections = [_]Connection{
@@ -261,6 +300,8 @@ const connections = [_]Connection{
     .{ .from = .{ .pedal_output = 1 }, .to = .{ .pedal_input = 2 } },
     .{ .from = .{ .pedal_output = 2 }, .to = .{ .pedal_input = 3 } },
     .{ .from = .{ .pedal_output = 3 }, .to = .amplifier_input },
+    .{ .from = .amplifier_output, .to = .{ .pedal_input = 4 } },
+    .{ .from = .{ .pedal_output = 4 }, .to = .cabinet_input },
 };
 
 pub const rig = Rig{
@@ -272,8 +313,8 @@ pub const rig = Rig{
 
 test "demo rig is connected semantically" {
     const std = @import("std");
-    try std.testing.expectEqual(@as(usize, 4), rig.pedals.len);
-    try std.testing.expectEqual(rig.pedals.len + 1, rig.connections.len);
+    try std.testing.expectEqual(@as(usize, 5), rig.pedals.len);
+    try std.testing.expectEqual(rig.pedals.len + 2, rig.connections.len);
     try std.testing.expectEqual(Presentation.closed, rig.pedals[1].presentation);
     try std.testing.expectEqual(PedalFormFactor.single, rig.pedals[2].enclosure.form_factor);
     try std.testing.expectEqual(@as(f32, 1), rig.pedals[2].enclosure.footprint_units);
@@ -304,6 +345,19 @@ test "demo rig is connected semantically" {
     try std.testing.expectEqualStrings("v6-tone5-sustain5", rig.pedals[2].processor.?.capture_variant);
     try std.testing.expectEqual(@as(usize, 3), rig.pedals[2].controls.len);
     for (rig.pedals[2].controls) |control| try std.testing.expect(!control.interactive);
+    try std.testing.expectEqual(SignalStage.effects_loop, rig.pedals[4].signal_stage);
+    try std.testing.expectEqual(PedalFormFactor.single, rig.pedals[4].enclosure.form_factor);
+    try std.testing.expectEqual(Accent.blue, rig.pedals[4].accent);
+    try std.testing.expectEqualStrings("ir.tc-electronic-skysurfer-reverb", rig.pedals[4].processor.?.resource_id);
+    try std.testing.expectEqualStrings("hall-3-medium", rig.pedals[4].processor.?.capture_variant);
+    try std.testing.expectEqual(@as(usize, 3), rig.pedals[4].controls.len);
+    for (rig.pedals[4].controls) |control| try std.testing.expect(!control.interactive);
+    try std.testing.expectEqualStrings("PLATE", rig.pedals[4].mode_switch.?.positions[1]);
+    try std.testing.expectEqualStrings("HALL", rig.pedals[4].mode_switch.?.positions[2]);
+    try std.testing.expectEqual(Endpoint.amplifier_output, rig.connections[5].from);
+    try std.testing.expectEqual(Endpoint{ .pedal_input = 4 }, rig.connections[5].to);
+    try std.testing.expectEqual(Endpoint{ .pedal_output = 4 }, rig.connections[6].from);
+    try std.testing.expectEqual(Endpoint.cabinet_input, rig.connections[6].to);
     try std.testing.expectEqualStrings("MID", rig.pedals[0].mode_switch.?.positions[1]);
     try std.testing.expectEqual(
         @import("../core/equipment_state.zig").ThreePosition.middle,

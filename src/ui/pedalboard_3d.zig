@@ -79,6 +79,7 @@ const combo_size = [3]f32{ 7.20, 4.10, 1.78 };
 const millimetres_to_world: f32 = 0.022;
 // Reserve the physical envelope of two opposing side sockets between pedals.
 const pedal_gap: f32 = 0.52;
+const effects_loop_row_depth: f32 = -3.0;
 
 pub const Mesh = struct {
     pub const max_vertices = 100_000;
@@ -232,17 +233,29 @@ fn modeSwitchCenter(placement: PedalPlacement) [3]f32 {
 
 fn pedalPlacement(rig: *const demo.Rig, pedal_index: usize) ?PedalPlacement {
     if (pedal_index >= rig.pedals.len) return null;
-    var total_width = pedal_gap * @as(f32, @floatFromInt(rig.pedals.len - 1));
-    for (rig.pedals) |pedal| total_width += pedal.enclosure.dimensions.width * millimetres_to_world;
+    const signal_stage = rig.pedals[pedal_index].signal_stage;
+    var lane_count: usize = 0;
+    var total_width: f32 = 0;
+    for (rig.pedals) |pedal| {
+        if (pedal.signal_stage != signal_stage) continue;
+        if (lane_count > 0) total_width += pedal_gap;
+        total_width += pedal.enclosure.dimensions.width * millimetres_to_world;
+        lane_count += 1;
+    }
     var cursor = total_width * 0.5;
     for (rig.pedals, 0..) |pedal, index| {
+        if (pedal.signal_stage != signal_stage) continue;
         const size = [3]f32{
             pedal.enclosure.dimensions.width * millimetres_to_world,
             pedal.enclosure.dimensions.height * millimetres_to_world,
             pedal.enclosure.dimensions.depth * millimetres_to_world,
         };
         const center_x = cursor - size[0] * 0.5;
-        if (index == pedal_index) return .{ .base = .{ center_x, 0.24, 0 }, .size = size };
+        const row_depth: f32 = switch (signal_stage) {
+            .before_amplifier => 0,
+            .effects_loop => effects_loop_row_depth,
+        };
+        if (index == pedal_index) return .{ .base = .{ center_x, 0.24, row_depth }, .size = size };
         cursor -= size[0] + pedal_gap;
     }
     return null;
@@ -1232,6 +1245,7 @@ fn accentMaterial(accent: demo.Accent) Material {
     return .{
         .base_color = switch (accent) {
             .cyan => .{ 0.055, 0.31, 0.42 },
+            .blue => .{ 0.025, 0.10, 0.30 },
             .green => .{ 0.055, 0.32, 0.18 },
             .amber => .{ 0.58, 0.20, 0.025 },
             .gold => .{ 0.62, 0.34, 0.045 },
@@ -1296,7 +1310,7 @@ test "semantic pedalboard produces bounded 3D geometry" {
     try build(&mesh, &demo.rig, .{});
     try std.testing.expect(mesh.len > 30_000);
     try std.testing.expect(mesh.len < Mesh.max_vertices);
-    try std.testing.expectEqual(@as(usize, 9), mesh.emissiveLights().len);
+    try std.testing.expectEqual(@as(usize, 10), mesh.emissiveLights().len);
     try std.testing.expectEqual(@as(usize, 0), mesh.len % 3);
     for (mesh.items()) |item| {
         for (item.position) |value| try std.testing.expect(std.math.isFinite(value));
@@ -1312,7 +1326,7 @@ test "semantic pedalboard produces bounded 3D geometry" {
 }
 
 test "open presentation remains available outside the default rig" {
-    var pedals: [4]demo.Pedal = undefined;
+    var pedals: [5]demo.Pedal = undefined;
     for (demo.rig.pedals, 0..) |pedal, index| pedals[index] = pedal;
     pedals[1].presentation = .open;
     var rig = demo.rig;
@@ -1359,12 +1373,22 @@ test "disabled first pedal keeps its LED geometry but removes emission" {
 
 test "dual pedal footswitch mask controls each LED independently" {
     var mesh = Mesh{};
-    const masks = [_]u8{ 1, 0, 0, 1 };
+    const masks = [_]u8{ 1, 0, 0, 1, 0 };
     try build(&mesh, &demo.rig, .{ .pedal_footswitch_masks = &masks });
     try std.testing.expect(mesh.emissiveLights()[7].intensity > 0);
     try std.testing.expectEqual(@as(f32, 0.0), mesh.emissiveLights()[8].intensity);
     try std.testing.expectEqual(@as([3]f32, .{ 1.0, 0.34, 0.008 }), mesh.emissiveLights()[7].color);
     try std.testing.expectEqual(@as([3]f32, .{ 1.0, 0.018, 0.006 }), mesh.emissiveLights()[8].color);
+}
+
+test "effects-loop pedals occupy a centered row behind the input chain" {
+    const input_placement = pedalPlacement(&demo.rig, 0) orelse return error.MissingInputPedal;
+    const loop_placement = pedalPlacement(&demo.rig, 4) orelse return error.MissingLoopPedal;
+    try std.testing.expect(loop_placement.base[2] < input_placement.base[2]);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), loop_placement.base[0], 0.0001);
+    const loop_front = loop_placement.base[2] + loop_placement.size[2] * 0.5;
+    const input_back = input_placement.base[2] - input_placement.size[2] * 0.5;
+    try std.testing.expect(loop_front < input_back);
 }
 
 test "both King of Tone footswitches are independently pickable" {

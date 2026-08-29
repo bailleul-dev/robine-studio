@@ -91,6 +91,11 @@ replace the electrical connection graph.
 - Cable length and routing constrain valid pedalboard placement.
 - Signal-flow direction is derived from endpoint roles, not screen position.
 
+Amplifier rigs expose `amplifier_input`, `amplifier_output`, and
+`cabinet_input` as distinct endpoints. Effects-loop equipment connects after
+the amplifier processor and before the cabinet response; it MUST NOT be inferred
+from pedal color, array index, or visual row.
+
 Pedalboard wiring therefore consists of placing equipment and connecting named
 ports. Visual cable paths follow the resulting assembly and can update when a
 pedal moves.

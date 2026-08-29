@@ -24,8 +24,11 @@ The initial projection contains:
   warm washes use bounded runtime spot cones rather than baked wall gradients.
 - Gently rounded enclosures sized from `PedalEnclosure.dimensions` in millimetres.
 - Layout spacing derived from physical width and bounded semantic gaps.
-- Pedals projected in signal order from right to left, matching physical
-  pedalboard practice while preserving semantic connection order.
+- Input-chain pedals projected in signal order from right to left, matching
+  physical pedalboard practice while preserving semantic connection order.
+- Effects-loop pedals projected onto a second centered row behind the input
+  chain. Row membership derives from `SignalStage`, not product-authored x/y
+  coordinates.
 - Procedural chicken-head knobs and pointers generated from the control
   collection according to UI-009.
 - One or more footswitches generated from `footswitch_count`.
@@ -57,7 +60,7 @@ updates may split or instance this stream without changing the description model
 - Ports derive from surface and slot semantics.
 - Camera framing derives from solved board bounds rather than individual product
   coordinates.
-- The rig camera frames the pedal row and the more distant combo together.
+- The rig camera frames both pedal rows and the more distant combo together.
 
 The initial procedural control patterns are placeholders for the richer mounting
 zones required by MOD-002. They MUST remain deterministic and data-driven while
@@ -94,7 +97,9 @@ that model is introduced.
   exposing a black perimeter.
 - The double pedal is physically wider than a single pedal.
 - The first pedal in the signal graph is rightmost and the final pedal is
-  leftmost.
+  leftmost within its semantic row.
+- An effects-loop pedal appears behind the input-chain row and remains between
+  the amplifier and cabinet endpoints in the connection graph.
 - Changing enclosure dimensions changes 3D size without changing renderer code.
 - The default demo presents every pedal as a normal closed product.
 - An explicit open-state fixture exposes its interior and raised lid from the

@@ -47,6 +47,11 @@ pub const op_amp_big_muff_default_nam = @embedFile(
     "models/nam/electro-harmonix-op-amp-big-muff/EHX IC Big Muff V-6 T-5 S-5.nam",
 );
 
+/// Medium Hall stereo response selected by the initial effects-loop mapping.
+pub const skysurfer_hall_medium_ir = @embedFile(
+    "irs/tc-electronic-skysurfer-reverb/Hall 3 - Medium.wav",
+);
+
 /// Initial cabinet response. Position C is an opaque pack identifier: the
 /// source archive does not document its physical microphone placement.
 pub const default_cabinet_ir = @embedFile(

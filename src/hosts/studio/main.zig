@@ -27,6 +27,7 @@ const Studio = struct {
             0,
             @as(u8, @intFromBool(self.king_orange_enabled.isEnabled())) |
                 (@as(u8, @intFromBool(self.king_red_enabled.isEnabled())) << 1),
+            0,
         };
         try robine.ui.pedalboard_3d.build(
             &self.pedalboard_mesh,
