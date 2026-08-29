@@ -28,15 +28,15 @@ pub const ViewProfile = struct {
 };
 
 pub const studio_profile = ViewProfile{
-    .camera = .{ -5.8, 7.2, 5.4 },
-    .target = .{ -17.0, 1.10, 0.1 },
-    .field_of_view_degrees = 40.0,
+    .camera = .{ -1.8, 8.4, 8.2 },
+    .target = .{ -15.2, 3.15, -2.8 },
+    .field_of_view_degrees = 43.0,
     .key_position = .{ 5.5, 10.5, -13.5 },
     .key_size = .{ 2.40, 3.20 },
-    .key_intensity = 1_250.0,
-    .exposure = 1.28,
-    .environment_strength = 0.92,
-    .fill_radiance = .{ 0.22, 0.30, 0.40 },
+    .key_intensity = 1_050.0,
+    .exposure = 1.14,
+    .environment_strength = 0.78,
+    .fill_radiance = .{ 0.16, 0.21, 0.28 },
 };
 
 pub const CameraPose = struct {
@@ -155,7 +155,7 @@ const materials = struct {
     const ceramic = Material{ .base_color = .{ 0.105, 0.075, 0.052 }, .roughness = 0.71, .metallic = 0.02 };
     const foliage_a = Material{ .base_color = .{ 0.045, 0.155, 0.070 }, .roughness = 0.84, .metallic = 0.0 };
     const foliage_b = Material{ .base_color = .{ 0.095, 0.235, 0.105 }, .roughness = 0.80, .metallic = 0.0 };
-    const lamp_warm = Material{ .base_color = .{ 1.0, 0.78, 0.52 }, .roughness = 0.18, .metallic = 0.0, .emissive = 3.6 };
+    const lamp_warm = Material{ .base_color = .{ 0.82, 0.34, 0.075 }, .roughness = 0.28, .metallic = 0.0, .emissive = 1.45 };
     const lamp_cool = Material{ .base_color = .{ 0.60, 0.78, 1.0 }, .roughness = 0.18, .metallic = 0.0, .emissive = 3.0 };
     const sconce_oak = Material{ .base_color = .{ 0.52, 0.245, 0.070 }, .roughness = 0.64, .metallic = 0.01 };
     const window_frame = Material{ .base_color = .{ 0.020, 0.025, 0.024 }, .roughness = 0.24, .metallic = 0.72 };
@@ -425,7 +425,7 @@ fn addStudioRoom(mesh: *Mesh) !void {
     try addRigFeatureWall(mesh, side_x);
     try addCeilingCanopy(mesh);
     try addWindowSeat(mesh, back_z);
-    try addSculpturalPlant(mesh, .{ 11.8, floor_top, -6.15 });
+    try addSculpturalPlant(mesh, .{ 2.4, floor_top, -6.25 });
 
     try addWindowWall(mesh, back_z, window_bottom, window_top, window_half_width);
     try addOverlookLandscape(mesh, back_z);
@@ -467,6 +467,16 @@ fn addRigFeatureWall(mesh: *Mesh, side_x: f32) !void {
     try addBox(mesh, .{ wall_x + 0.42, 5.85, -3.68 }, .{ 0.22, 10.7, 0.26 }, materials.walnut);
     try addBox(mesh, .{ wall_x + 0.42, 5.85, 3.68 }, .{ 0.22, 10.7, 0.26 }, materials.walnut);
 
+    // Layered acoustic artwork and a slim display ledge break the center bay
+    // into human-scale zones while leaving the amplifier visually dominant.
+    try addCylinder(mesh, .{ wall_x + 0.48, 8.10, 0 }, 2.25, 0.16, materials.walnut_dark, .x);
+    try addCylinder(mesh, .{ wall_x + 0.59, 8.10, 0 }, 1.72, 0.13, materials.rug_detail, .x);
+    try addCylinder(mesh, .{ wall_x + 0.68, 8.10, 0 }, 0.62, 0.10, materials.amplifier_piping, .x);
+    try addBox(mesh, .{ wall_x + 0.64, 4.38, 0 }, .{ 0.72, 0.16, 5.1 }, materials.walnut);
+    try addCylinder(mesh, .{ wall_x + 0.82, 4.83, -1.45 }, 0.28, 0.82, materials.ceramic, .y);
+    try addCylinder(mesh, .{ wall_x + 0.82, 4.73, 0.15 }, 0.38, 0.62, materials.limestone, .y);
+    try addCylinder(mesh, .{ wall_x + 0.82, 4.91, 1.55 }, 0.22, 0.98, materials.rug_border, .y);
+
     for ([_]f32{ -4.08, 4.08 }) |z| {
         try addBox(mesh, .{ wall_x + 0.53, 6.85, z }, .{ 0.06, 11.2, 0.10 }, materials.lamp_warm);
         try mesh.addEmissiveLight(.{
@@ -493,7 +503,7 @@ fn addCeilingCanopy(mesh: *Mesh) !void {
 }
 
 fn addWindowSeat(mesh: *Mesh, back_z: f32) !void {
-    const center = [3]f32{ 8.2, 1.05, back_z + 1.30 };
+    const center = [3]f32{ -4.4, 1.05, back_z + 1.30 };
     try addBox(mesh, center, .{ 10.6, 1.50, 2.15 }, materials.walnut_dark);
     try addBox(mesh, .{ center[0], center[1] + 0.84, center[2] + 0.08 }, .{ 9.95, 0.38, 1.82 }, materials.linen);
     try addBox(mesh, .{ center[0] - 3.20, center[1] + 1.37, center[2] - 0.62 }, .{ 2.75, 1.20, 0.38 }, materials.olive_linen);
