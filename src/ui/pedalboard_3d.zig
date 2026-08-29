@@ -29,7 +29,7 @@ pub const ViewProfile = struct {
 
 pub const studio_profile = ViewProfile{
     .camera = .{ -10.8, 6.4, 0 },
-    .target = .{ -17.20, 1.20, 0 },
+    .target = .{ -17.60, 1.35, 0 },
     .field_of_view_degrees = 31.0,
     .key_position = .{ 5.5, 10.5, -13.5 },
     .key_size = .{ 2.40, 3.20 },
