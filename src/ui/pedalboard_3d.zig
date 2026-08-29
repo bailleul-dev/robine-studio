@@ -28,9 +28,9 @@ pub const ViewProfile = struct {
 };
 
 pub const studio_profile = ViewProfile{
-    .camera = .{ -1.8, 8.4, 8.2 },
-    .target = .{ -15.2, 3.15, -2.8 },
-    .field_of_view_degrees = 43.0,
+    .camera = .{ -10.8, 6.4, 0 },
+    .target = .{ -15.15, 0.65, 0 },
+    .field_of_view_degrees = 36.0,
     .key_position = .{ 5.5, 10.5, -13.5 },
     .key_size = .{ 2.40, 3.20 },
     .key_intensity = 1_050.0,
@@ -84,9 +84,12 @@ const pedal_detail_scale: f32 = millimetres_to_world / legacy_pedal_scale;
 const combo_center = [3]f32{ 0, 1.53, -5.55 };
 const combo_size = [3]f32{ 3.10, 2.50, 1.30 };
 const equipment_offset_x: f32 = -14.52;
-// 40 mm clear space leaves room for opposing side-mounted jack hardware.
-const pedal_gap: f32 = 0.20;
-const effects_loop_row_depth: f32 = -3.0;
+// 65 mm clear space leaves opposing side jacks readable without scattering the
+// input chain across the room.
+const pedal_gap: f32 = 0.325;
+// The effects-loop row sits 180 mm behind the input chain, leaving roughly
+// 60 mm between enclosure edges.
+const effects_loop_row_depth: f32 = -0.90;
 
 fn pedalDetail(value: f32) f32 {
     return value * pedal_detail_scale;
