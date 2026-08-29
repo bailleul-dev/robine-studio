@@ -302,8 +302,8 @@ const shader_source =
     \\        constexpr sampler surface_sampler(coord::normalized, address::clamp_to_edge,
     \\            filter::linear, mip_filter::linear);
     \\        float2 rug_uv = float2(
-    \\            (in.world_position.x + 20.75) / 11.40,
-    \\            1.0 - (in.world_position.z + 5.95) / 12.20);
+    \\            (in.world_position.x + 19.90) / 6.80,
+    \\            1.0 - (in.world_position.z + 3.55) / 7.40);
     \\        float3 texture_color = surface_texture.sample(surface_sampler, rug_uv).rgb;
     \\        float texture_luma = dot(texture_color, float3(0.299, 0.587, 0.114));
     \\        float3 stylized_neutral = float3(texture_luma) * float3(1.05, 0.94, 0.82);

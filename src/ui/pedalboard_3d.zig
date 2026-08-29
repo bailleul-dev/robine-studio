@@ -439,8 +439,11 @@ fn addStudioRoom(mesh: *Mesh) !void {
 }
 
 fn addStudioRug(mesh: *Mesh) !void {
-    const center = [3]f32{ -15.05, 0.315, 0.15 };
-    try addBox(mesh, center, .{ 11.4, 0.055, 12.2 }, materials.rug_base);
+    // Keep the rug as a distinct furnishing rather than a second floor. Its
+    // rear edge sits 170 mm clear of the feature wall and the tighter footprint
+    // gives the generated artwork a denser, more credible physical scale.
+    const center = [3]f32{ -16.50, 0.315, 0.15 };
+    try addBox(mesh, center, .{ 6.80, 0.055, 7.40 }, materials.rug_base);
 }
 
 fn addRigFeatureWall(mesh: *Mesh, side_x: f32) !void {
