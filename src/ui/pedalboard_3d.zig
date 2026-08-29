@@ -5,6 +5,28 @@ const lighting = @import("lighting_lab.zig");
 pub const Vertex = lighting.Vertex;
 pub const Material = lighting.Material;
 
+pub const ViewProfile = struct {
+    camera: [3]f32,
+    target: [3]f32,
+    key_position: [3]f32,
+    key_size: [2]f32,
+    key_intensity: f32,
+    exposure: f32,
+    environment_strength: f32,
+    fill_radiance: [3]f32,
+};
+
+pub const studio_profile = ViewProfile{
+    .camera = .{ 0, 10.8, 4.8 },
+    .target = .{ 0, 0.52, 0.10 },
+    .key_position = .{ -9.0, 10.0, 6.5 },
+    .key_size = .{ 3.2, 9.0 },
+    .key_intensity = 520.0,
+    .exposure = 1.42,
+    .environment_strength = 0.88,
+    .fill_radiance = .{ 0.90, 1.20, 1.60 },
+};
+
 pub const Mesh = struct {
     pub const max_vertices = 32_000;
 

@@ -11,6 +11,7 @@ pub const LightingProfile = struct {
     exposure: f32,
     strip_width: f32,
     strip_height: f32,
+    key_intensity: f32,
     orbit_seconds: f32,
     environment_strength: f32,
 };
@@ -20,6 +21,7 @@ pub const studio_profile = LightingProfile{
     .exposure = 1.20,
     .strip_width = 1.15,
     .strip_height = 3.8,
+    .key_intensity = 34.0,
     .orbit_seconds = 8.0,
     .environment_strength = 0.52,
 };

@@ -1,6 +1,7 @@
 const std = @import("std");
 const wireframe = @import("robine").ui.wireframe;
 const lighting_lab = @import("robine").ui.lighting_lab;
+const pedalboard_3d = @import("robine").ui.pedalboard_3d;
 
 const Object = ?*anyopaque;
 const Selector = *anyopaque;
@@ -251,10 +252,21 @@ const shader_source =
     \\            max(4.0 * ndotv * ndotl, 0.001);
     \\        float3 diffuse = (1.0 - fresnel) * (1.0 - metallic) * in.base_color / M_PI_F;
     \\        float edge = 1.0 - abs(t) * 1.35;
-    \\        float3 radiance = float3(1.0, 0.78, 0.54) * max(edge, 0.15) * 34.0 /
+    \\        float3 radiance = float3(1.0, 0.78, 0.54) * max(edge, 0.15) * uniforms.light_axis.w /
     \\            (distance_squared * float(sample_count));
     \\        direct += (diffuse + specular) * radiance * ndotl;
     \\    }
+    \\    float3 fill_l = normalize(float3(0.78, 0.52, -0.36));
+    \\    float3 fill_h = normalize(v + fill_l);
+    \\    float fill_ndotl = max(dot(n, fill_l), 0.0);
+    \\    float fill_ndotv = max(dot(n, v), 0.0);
+    \\    float fill_distribution = distribution_ggx(n, fill_h, roughness);
+    \\    float fill_geometry = geometry_smith(n, v, fill_l, roughness);
+    \\    float3 fill_fresnel = fresnel_schlick(max(dot(fill_h, v), 0.0), f0);
+    \\    float3 fill_specular = fill_distribution * fill_geometry * fill_fresnel /
+    \\        max(4.0 * fill_ndotv * fill_ndotl, 0.001);
+    \\    float3 fill_diffuse = (1.0 - fill_fresnel) * (1.0 - metallic) * in.base_color / M_PI_F;
+    \\    direct += (fill_diffuse + fill_specular) * uniforms.padding * fill_ndotl;
     \\    float3 reflection = reflect(-v, n);
     \\    float horizon = clamp(reflection.y * 0.5 + 0.5, 0.0, 1.0);
     \\    float3 environment = mix(float3(0.006, 0.010, 0.014), float3(0.10, 0.16, 0.18), horizon);
@@ -877,7 +889,7 @@ fn lightingUniforms(aspect: f32) PbrUniforms {
         .light_view_projection = multiplyMatrices(light_projection, light_view),
         .camera_position = .{ camera[0], camera[1], camera[2], 1 },
         .light_position = .{ light[0], light[1], light[2], 1 },
-        .light_axis = .{ 0, 1, 0, 0 },
+        .light_axis = .{ 0, 1, 0, lighting_lab.studio_profile.key_intensity },
         .strip_size_exposure = .{
             lighting_lab.studio_profile.strip_width,
             lighting_lab.studio_profile.strip_height,
@@ -889,26 +901,28 @@ fn lightingUniforms(aspect: f32) PbrUniforms {
 }
 
 fn pedalboardUniforms(aspect: f32) PbrUniforms {
-    const camera = [3]f32{ 0, 6.8, 7.4 };
-    const target = [3]f32{ 0, 0.55, 0 };
-    const light = [3]f32{ -4.8, 7.5, 5.6 };
+    const profile = pedalboard_3d.studio_profile;
+    const camera = profile.camera;
+    const target = profile.target;
+    const light = profile.key_position;
     const view = lookAt(camera, target, .{ 0, 1, 0 });
-    const projection = perspective(31.0 * std.math.pi / 180.0, aspect, 0.1, 40.0);
+    const projection = perspective(27.0 * std.math.pi / 180.0, aspect, 0.1, 40.0);
     const light_view = lookAt(light, target, .{ 0, 1, 0 });
-    const light_projection = perspective(76.0 * std.math.pi / 180.0, 1.0, 0.2, 30.0);
+    const light_projection = perspective(84.0 * std.math.pi / 180.0, 1.0, 0.2, 30.0);
     return .{
         .view_projection = multiplyMatrices(projection, view),
         .light_view_projection = multiplyMatrices(light_projection, light_view),
         .camera_position = .{ camera[0], camera[1], camera[2], 1 },
         .light_position = .{ light[0], light[1], light[2], 1 },
-        .light_axis = .{ 0, 1, 0, 0 },
+        .light_axis = .{ 0, 1, 0, profile.key_intensity },
         .strip_size_exposure = .{
-            2.1,
-            7.0,
-            1.16,
-            0.62,
+            profile.key_size[0],
+            profile.key_size[1],
+            profile.exposure,
+            profile.environment_strength,
         },
         .time = 0,
+        .padding = profile.fill_radiance,
     };
 }
 

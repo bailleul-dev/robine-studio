@@ -47,8 +47,13 @@ that model is introduced.
 ## Rendering behavior
 
 - The board uses the production 3D pipeline selected by UI-002.
-- One static studio strip light and one filtered shadow map illuminate the rig
-  view; decorative continuous animation is disabled.
+- One static warm strip light placed laterally and one filtered shadow map
+  illuminate the rig view. A restrained cool lateral fill separates the opposite
+  edges without cancelling the key-light shadows; decorative continuous
+  animation is disabled.
+- Camera, key-light position and size, key intensity, exposure, environment
+  strength, and fill radiance belong to one declarative `ViewProfile` in `ui`.
+  The Metal backend consumes this profile and does not own product-view tuning.
 - Equipment geometry and shadow geometry share the same vertex stream.
 - The renderer overlays browser, signal-flow, transport, and other screen-space
   UI after the 3D pass.

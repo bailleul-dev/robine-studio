@@ -185,7 +185,6 @@ const pedals = [_]Pedal{
         .controls = &fuzz_controls,
         .ports = &top_ports,
         .enclosure = enclosures.single,
-        .presentation = .open,
         .accent = .coral,
     },
     .{
@@ -236,7 +235,7 @@ test "demo rig is connected semantically" {
     const std = @import("std");
     try std.testing.expectEqual(@as(usize, 5), rig.pedals.len);
     try std.testing.expectEqual(rig.pedals.len + 1, rig.connections.len);
-    try std.testing.expectEqual(Presentation.open, rig.pedals[1].presentation);
+    try std.testing.expectEqual(Presentation.closed, rig.pedals[1].presentation);
     try std.testing.expectEqual(PedalFormFactor.double, rig.pedals[3].enclosure.form_factor);
     try std.testing.expectEqual(@as(f32, 2), rig.pedals[3].enclosure.footprint_units);
     try std.testing.expectEqual(JackSurface.left_side, rig.pedals[0].ports[0].surface);
