@@ -47,6 +47,7 @@ recommended behavior, and optional behavior respectively.
 | [AUD-007](audio/aud-007-tumnus-deluxe-overdrive.md) | Audio | Accepted | Gold Tumnus Deluxe NAM grid and deferred full-quality activation |
 | [AUD-008](audio/aud-008-op-amp-big-muff-fuzz.md) | Audio | Accepted | Green Op-Amp Big Muff NAM grid and removal of the red placeholder pedal |
 | [AUD-009](audio/aud-009-effects-loop-skysurfer-reverb.md) | Audio | Accepted | Post-amplifier effects loop and stereo Skysurfer reverb IR grid |
+| [AUD-010](audio/aud-010-specialized-a2-inference.md) | Audio | Implemented | Portable SIMD A2-Lite and A2-Full inference faster than the reference implementation |
 | [HOST-001](hosts/host-001-runtime-hosts.md) | Hosts | Deferred | Studio, standalone, CLAP, and VST3 hosts |
 
 ## Status lifecycle
