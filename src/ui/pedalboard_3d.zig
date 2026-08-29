@@ -73,12 +73,20 @@ const materials = struct {
     const wood_c = Material{ .base_color = .{ 0.145, 0.070, 0.030 }, .roughness = 0.61, .metallic = 0.02 };
     const black_metal = Material{ .base_color = .{ 0.025, 0.032, 0.031 }, .roughness = 0.19, .metallic = 0.82 };
     const chrome = Material{ .base_color = .{ 0.48, 0.52, 0.50 }, .roughness = 0.14, .metallic = 1.0 };
+    const polished_chrome = Material{ .base_color = .{ 0.76, 0.80, 0.78 }, .roughness = 0.055, .metallic = 1.0 };
+    const knob_plastic = Material{ .base_color = .{ 0.018, 0.022, 0.021 }, .roughness = 0.28, .metallic = 0.04 };
+    const knob_indicator = Material{ .base_color = .{ 0.94, 0.77, 0.38 }, .roughness = 0.34, .metallic = 0.02 };
     const rubber = Material{ .base_color = .{ 0.012, 0.015, 0.014 }, .roughness = 0.78, .metallic = 0.0 };
     const pcb = Material{ .base_color = .{ 0.025, 0.19, 0.105 }, .roughness = 0.38, .metallic = 0.08 };
     const pointer = Material{ .base_color = .{ 0.95, 0.67, 0.18 }, .roughness = 0.28, .metallic = 0.30 };
 };
 
 const Axis = enum { x, y, z };
+
+const LatheRing = struct {
+    height: f32,
+    radius: f32,
+};
 
 pub fn build(mesh: *Mesh, rig: *const demo.Rig) !void {
     mesh.* = .{};
@@ -191,10 +199,8 @@ fn addControls(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void
         const x = base[0] + size[0] * ((@as(f32, @floatFromInt(column)) + 0.5) / @as(f32, @floatFromInt(columns)) - 0.5) * 0.78;
         const z = base[2] - size[2] * 0.25 + @as(f32, @floatFromInt(row)) * size[2] * 0.22 / @as(f32, @floatFromInt(@max(rows, 1)));
         const knob_base = base[1] + size[1];
-        try addCylinder(mesh, .{ x, knob_base + 0.11, z }, radius * 1.14, 0.12, materials.chrome, .y);
-        try addCylinder(mesh, .{ x, knob_base + 0.29, z }, radius, 0.32, materials.black_metal, .y);
         const angle = (-0.75 + control.normalized_value * 1.5) * std.math.pi;
-        try addBox(mesh, .{ x + @sin(angle) * radius * 0.55, knob_base + 0.465, z - @cos(angle) * radius * 0.55 }, .{ radius * 0.15, 0.035, radius * 0.62 }, materials.pointer);
+        try addChickenHeadKnob(mesh, .{ x, knob_base, z }, radius, angle);
     }
 }
 
@@ -206,10 +212,9 @@ fn addFootswitches(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !
         const z = base[2] + size[2] * 0.29;
         const top = base[1] + size[1];
         const led_z = z - size[2] * 0.16;
-        try addCylinder(mesh, .{ x, top + 0.09, z }, 0.18, 0.16, materials.chrome, .y);
-        try addCylinder(mesh, .{ x, top + 0.19, z }, 0.125, 0.12, materials.rubber, .y);
-        try addCylinder(mesh, .{ x, top + 0.035, led_z }, 0.082, 0.050, materials.chrome, .y);
-        try addCylinder(mesh, .{ x, top + 0.078, led_z }, 0.070, 0.080, ledLensMaterial(brightness), .y);
+        try addFootswitchHardware(mesh, .{ x, top, z });
+        try addIndicatorWasher(mesh, .{ x, top + 0.004, led_z }, 0.063, 0.112);
+        try addCylinder(mesh, .{ x, top + 0.072, led_z }, 0.060, 0.080, ledLensMaterial(brightness), .y);
         try addCylinder(mesh, .{ x, top + 0.126, led_z }, 0.018, 0.024, ledCoreMaterial(brightness), .y);
         try mesh.addEmissiveLight(.{
             .position = .{ x, top + 0.16, led_z },
@@ -218,6 +223,86 @@ fn addFootswitches(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !
             .intensity = 1.55 * brightness,
         });
     }
+}
+
+fn addChickenHeadKnob(mesh: *Mesh, origin: [3]f32, radius: f32, angle: f32) !void {
+    const direction = [3]f32{ @sin(angle), 0, -@cos(angle) };
+    const perpendicular = [3]f32{ @cos(angle), 0, @sin(angle) };
+    try addCylinder(mesh, .{ origin[0], origin[1] + 0.065, origin[2] }, radius * 1.18, 0.13, materials.knob_plastic, .y);
+    try addCylinder(mesh, .{ origin[0], origin[1] + 0.145, origin[2] }, radius * 0.72, 0.16, materials.knob_plastic, .y);
+
+    const bottom_back_left = knobPoint(origin, direction, perpendicular, -radius * 0.42, -radius * 0.56, 0.12);
+    const bottom_back_right = knobPoint(origin, direction, perpendicular, -radius * 0.42, radius * 0.56, 0.12);
+    const bottom_front_left = knobPoint(origin, direction, perpendicular, radius * 0.96, -radius * 0.34, 0.12);
+    const bottom_front_right = knobPoint(origin, direction, perpendicular, radius * 0.96, radius * 0.34, 0.12);
+    const top_back_left = knobPoint(origin, direction, perpendicular, -radius * 0.30, -radius * 0.45, 0.42);
+    const top_back_right = knobPoint(origin, direction, perpendicular, -radius * 0.30, radius * 0.45, 0.42);
+    const top_front_left = knobPoint(origin, direction, perpendicular, radius * 0.76, -radius * 0.25, 0.42);
+    const top_front_right = knobPoint(origin, direction, perpendicular, radius * 0.76, radius * 0.25, 0.42);
+
+    try addQuadAutoNormal(mesh, top_back_left, top_back_right, top_front_right, top_front_left, materials.knob_plastic);
+    try addQuadAutoNormal(mesh, bottom_back_left, top_back_left, top_front_left, bottom_front_left, materials.knob_plastic);
+    try addQuadAutoNormal(mesh, bottom_front_right, top_front_right, top_back_right, bottom_back_right, materials.knob_plastic);
+    try addQuadAutoNormal(mesh, bottom_back_right, top_back_right, top_back_left, bottom_back_left, materials.knob_plastic);
+    try addQuadAutoNormal(mesh, bottom_front_left, top_front_left, top_front_right, bottom_front_right, materials.knob_plastic);
+
+    const stripe_center = knobPoint(origin, direction, perpendicular, radius * 0.24, 0, 0.431);
+    try addOrientedBox(mesh, stripe_center, direction, perpendicular, radius * 0.055, radius * 0.43, 0.018, materials.knob_indicator);
+
+    const stripe_top_left = knobPoint(origin, direction, perpendicular, radius * 0.775, -radius * 0.055, 0.405);
+    const stripe_top_right = knobPoint(origin, direction, perpendicular, radius * 0.775, radius * 0.055, 0.405);
+    const stripe_bottom_right = knobPoint(origin, direction, perpendicular, radius * 0.955, radius * 0.055, 0.17);
+    const stripe_bottom_left = knobPoint(origin, direction, perpendicular, radius * 0.955, -radius * 0.055, 0.17);
+    try addQuad(mesh, stripe_top_left, stripe_bottom_left, stripe_bottom_right, stripe_top_right, direction, materials.knob_indicator);
+}
+
+fn addFootswitchHardware(mesh: *Mesh, origin: [3]f32) !void {
+    try addCylinderSegments(mesh, .{ origin[0], origin[1] + 0.027, origin[2] }, 0.23, 0.054, materials.polished_chrome, .y, 6);
+    try addIndicatorWasher(mesh, .{ origin[0], origin[1] + 0.052, origin[2] }, 0.112, 0.205);
+    const actuator_profile = [_]LatheRing{
+        .{ .height = 0.00, .radius = 0.112 },
+        .{ .height = 0.10, .radius = 0.112 },
+        .{ .height = 0.125, .radius = 0.155 },
+        .{ .height = 0.215, .radius = 0.155 },
+        .{ .height = 0.240, .radius = 0.140 },
+    };
+    try addLathedY(mesh, .{ origin[0], origin[1] + 0.060, origin[2] }, &actuator_profile, materials.polished_chrome);
+}
+
+fn knobPoint(origin: [3]f32, direction: [3]f32, perpendicular: [3]f32, along: f32, lateral: f32, height: f32) [3]f32 {
+    return .{
+        origin[0] + direction[0] * along + perpendicular[0] * lateral,
+        origin[1] + height,
+        origin[2] + direction[2] * along + perpendicular[2] * lateral,
+    };
+}
+
+fn addOrientedBox(
+    mesh: *Mesh,
+    center: [3]f32,
+    direction: [3]f32,
+    perpendicular: [3]f32,
+    half_width: f32,
+    half_length: f32,
+    height: f32,
+    material: Material,
+) !void {
+    const bottom_center = [3]f32{ center[0], center[1] - height * 0.5, center[2] };
+    const top_center = [3]f32{ center[0], center[1] + height * 0.5, center[2] };
+    const bottom_back_left = knobPoint(bottom_center, direction, perpendicular, -half_length, -half_width, 0);
+    const bottom_back_right = knobPoint(bottom_center, direction, perpendicular, -half_length, half_width, 0);
+    const bottom_front_left = knobPoint(bottom_center, direction, perpendicular, half_length, -half_width, 0);
+    const bottom_front_right = knobPoint(bottom_center, direction, perpendicular, half_length, half_width, 0);
+    const top_back_left = knobPoint(top_center, direction, perpendicular, -half_length, -half_width, 0);
+    const top_back_right = knobPoint(top_center, direction, perpendicular, -half_length, half_width, 0);
+    const top_front_left = knobPoint(top_center, direction, perpendicular, half_length, -half_width, 0);
+    const top_front_right = knobPoint(top_center, direction, perpendicular, half_length, half_width, 0);
+    try addQuad(mesh, top_back_left, top_back_right, top_front_right, top_front_left, .{ 0, 1, 0 }, material);
+    try addQuad(mesh, bottom_front_left, bottom_front_right, bottom_back_right, bottom_back_left, .{ 0, -1, 0 }, material);
+    try addQuad(mesh, bottom_back_left, top_back_left, top_front_left, bottom_front_left, .{ -perpendicular[0], 0, -perpendicular[2] }, material);
+    try addQuad(mesh, bottom_front_right, top_front_right, top_back_right, bottom_back_right, perpendicular, material);
+    try addQuad(mesh, bottom_back_right, top_back_right, top_back_left, bottom_back_left, .{ -direction[0], 0, -direction[2] }, material);
+    try addQuad(mesh, bottom_front_left, top_front_left, top_front_right, bottom_front_right, direction, material);
 }
 
 fn addPorts(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void {
@@ -361,11 +446,90 @@ fn roundedRingNormal(center: [3]f32, half_x: f32, half_z: f32, radius: f32, poin
     return normalized3(.{ local_x - corner_x, 0, local_z - corner_z });
 }
 
+fn addIndicatorWasher(mesh: *Mesh, center: [3]f32, inner_radius: f32, outer_radius: f32) !void {
+    const ProfilePoint = struct {
+        radius: f32,
+        height: f32,
+        radial_normal: f32,
+        up_normal: f32,
+    };
+    const profile = [_]ProfilePoint{
+        .{ .radius = outer_radius, .height = 0.000, .radial_normal = 0.99, .up_normal = 0.12 },
+        .{ .radius = outer_radius * 0.96, .height = 0.018, .radial_normal = 0.76, .up_normal = 0.65 },
+        .{ .radius = inner_radius + (outer_radius - inner_radius) * 0.67, .height = 0.036, .radial_normal = 0.15, .up_normal = 0.99 },
+        .{ .radius = inner_radius + (outer_radius - inner_radius) * 0.24, .height = 0.031, .radial_normal = -0.35, .up_normal = 0.94 },
+        .{ .radius = inner_radius, .height = 0.010, .radial_normal = -0.80, .up_normal = 0.60 },
+    };
+    const segments: usize = 48;
+    for (0..profile.len - 1) |profile_index| {
+        const outer = profile[profile_index];
+        const inner = profile[profile_index + 1];
+        for (0..segments) |segment| {
+            const angle0 = std.math.tau * @as(f32, @floatFromInt(segment)) / @as(f32, @floatFromInt(segments));
+            const angle1 = std.math.tau * @as(f32, @floatFromInt(segment + 1)) / @as(f32, @floatFromInt(segments));
+            const outer0 = [3]f32{ center[0] + @cos(angle0) * outer.radius, center[1] + outer.height, center[2] + @sin(angle0) * outer.radius };
+            const outer1 = [3]f32{ center[0] + @cos(angle1) * outer.radius, center[1] + outer.height, center[2] + @sin(angle1) * outer.radius };
+            const inner0 = [3]f32{ center[0] + @cos(angle0) * inner.radius, center[1] + inner.height, center[2] + @sin(angle0) * inner.radius };
+            const inner1 = [3]f32{ center[0] + @cos(angle1) * inner.radius, center[1] + inner.height, center[2] + @sin(angle1) * inner.radius };
+            const normal_outer0 = normalized3(.{ @cos(angle0) * outer.radial_normal, outer.up_normal, @sin(angle0) * outer.radial_normal });
+            const normal_outer1 = normalized3(.{ @cos(angle1) * outer.radial_normal, outer.up_normal, @sin(angle1) * outer.radial_normal });
+            const normal_inner0 = normalized3(.{ @cos(angle0) * inner.radial_normal, inner.up_normal, @sin(angle0) * inner.radial_normal });
+            const normal_inner1 = normalized3(.{ @cos(angle1) * inner.radial_normal, inner.up_normal, @sin(angle1) * inner.radial_normal });
+            try addSmoothQuad(
+                mesh,
+                outer0,
+                outer1,
+                inner1,
+                inner0,
+                normal_outer0,
+                normal_outer1,
+                normal_inner1,
+                normal_inner0,
+                materials.polished_chrome,
+            );
+        }
+    }
+}
+
+fn addLathedY(mesh: *Mesh, origin: [3]f32, rings: []const LatheRing, material: Material) !void {
+    const segments: usize = 48;
+    for (0..rings.len - 1) |ring_index| {
+        const lower = rings[ring_index];
+        const upper = rings[ring_index + 1];
+        const delta_height = upper.height - lower.height;
+        const delta_radius = upper.radius - lower.radius;
+        for (0..segments) |segment| {
+            const angle0 = std.math.tau * @as(f32, @floatFromInt(segment)) / @as(f32, @floatFromInt(segments));
+            const angle1 = std.math.tau * @as(f32, @floatFromInt(segment + 1)) / @as(f32, @floatFromInt(segments));
+            const lower0 = [3]f32{ origin[0] + @cos(angle0) * lower.radius, origin[1] + lower.height, origin[2] + @sin(angle0) * lower.radius };
+            const lower1 = [3]f32{ origin[0] + @cos(angle1) * lower.radius, origin[1] + lower.height, origin[2] + @sin(angle1) * lower.radius };
+            const upper0 = [3]f32{ origin[0] + @cos(angle0) * upper.radius, origin[1] + upper.height, origin[2] + @sin(angle0) * upper.radius };
+            const upper1 = [3]f32{ origin[0] + @cos(angle1) * upper.radius, origin[1] + upper.height, origin[2] + @sin(angle1) * upper.radius };
+            const normal0 = normalized3(.{ @cos(angle0) * delta_height, -delta_radius, @sin(angle0) * delta_height });
+            const normal1 = normalized3(.{ @cos(angle1) * delta_height, -delta_radius, @sin(angle1) * delta_height });
+            try addSmoothQuad(mesh, lower0, lower1, upper1, upper0, normal0, normal1, normal1, normal0, material);
+        }
+    }
+
+    const top = rings[rings.len - 1];
+    for (0..segments) |segment| {
+        const angle0 = std.math.tau * @as(f32, @floatFromInt(segment)) / @as(f32, @floatFromInt(segments));
+        const angle1 = std.math.tau * @as(f32, @floatFromInt(segment + 1)) / @as(f32, @floatFromInt(segments));
+        const center = [3]f32{ origin[0], origin[1] + top.height, origin[2] };
+        const edge0 = [3]f32{ origin[0] + @cos(angle0) * top.radius, center[1], origin[2] + @sin(angle0) * top.radius };
+        const edge1 = [3]f32{ origin[0] + @cos(angle1) * top.radius, center[1], origin[2] + @sin(angle1) * top.radius };
+        try mesh.triangle(vertex(center, .{ 0, 1, 0 }, material), vertex(edge1, .{ 0, 1, 0 }, material), vertex(edge0, .{ 0, 1, 0 }, material));
+    }
+}
+
 fn addCylinder(mesh: *Mesh, center: [3]f32, radius: f32, length: f32, material: Material, axis: Axis) !void {
-    const segments = 48;
+    try addCylinderSegments(mesh, center, radius, length, material, axis, 48);
+}
+
+fn addCylinderSegments(mesh: *Mesh, center: [3]f32, radius: f32, length: f32, material: Material, axis: Axis, segments: usize) !void {
     for (0..segments) |index| {
-        const a0 = std.math.tau * @as(f32, @floatFromInt(index)) / segments;
-        const a1 = std.math.tau * @as(f32, @floatFromInt(index + 1)) / segments;
+        const a0 = std.math.tau * @as(f32, @floatFromInt(index)) / @as(f32, @floatFromInt(segments));
+        const a1 = std.math.tau * @as(f32, @floatFromInt(index + 1)) / @as(f32, @floatFromInt(segments));
         const n0 = radialVector(axis, a0);
         const n1 = radialVector(axis, a1);
         const p00 = cylinderPoint(center, axis, -length * 0.5, radius, a0);
@@ -433,6 +597,17 @@ fn addBox(mesh: *Mesh, center: [3]f32, size: [3]f32, material: Material) !void {
 fn addQuad(mesh: *Mesh, a: [3]f32, b: [3]f32, c: [3]f32, d: [3]f32, normal: [3]f32, material: Material) !void {
     try mesh.triangle(vertex(a, normal, material), vertex(b, normal, material), vertex(c, normal, material));
     try mesh.triangle(vertex(a, normal, material), vertex(c, normal, material), vertex(d, normal, material));
+}
+
+fn addQuadAutoNormal(mesh: *Mesh, a: [3]f32, b: [3]f32, c: [3]f32, d: [3]f32, material: Material) !void {
+    const ab = [3]f32{ b[0] - a[0], b[1] - a[1], b[2] - a[2] };
+    const ac = [3]f32{ c[0] - a[0], c[1] - a[1], c[2] - a[2] };
+    const normal = normalized3(.{
+        ab[1] * ac[2] - ab[2] * ac[1],
+        ab[2] * ac[0] - ab[0] * ac[2],
+        ab[0] * ac[1] - ab[1] * ac[0],
+    });
+    try addQuad(mesh, a, b, c, d, normal, material);
 }
 
 fn addSmoothQuad(

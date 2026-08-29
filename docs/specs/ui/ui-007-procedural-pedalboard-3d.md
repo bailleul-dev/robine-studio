@@ -19,7 +19,8 @@ The initial projection contains:
 - Layout spacing derived from physical width and bounded semantic gaps.
 - Pedals projected in signal order from right to left, matching physical
   pedalboard practice while preserving semantic connection order.
-- Procedural knobs and pointers generated from the control collection.
+- Procedural chicken-head knobs and pointers generated from the control
+  collection according to UI-009.
 - One or more footswitches generated from `footswitch_count`.
 - Visible sockets placed on `left_side`, `right_side`, or `top` according to
   MOD-005 mounting data.

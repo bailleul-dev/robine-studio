@@ -25,7 +25,8 @@ clamps description values before deriving emission and local-light intensity.
 
 The procedural LED contains three independently shaded parts:
 
-1. A metallic mounting ring.
+1. A shallow polished-metal washer wider than the lens, with a convex radial
+   profile and smooth normals that catch multiple studio reflections.
 2. A glossy colored lens with moderate HDR emission.
 3. A smaller high-intensity core that remains readable after tone mapping.
 

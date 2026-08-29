@@ -325,6 +325,11 @@ const shader_source =
     \\    float clearcoat_fresnel = fresnel_schlick(max(dot(n, v), 0.0), float3(0.04)).r;
     \\    ambient += float3(0.52, 0.78, 0.96) * fixed_strip * clearcoat_strength *
     \\        (0.55 + clearcoat_fresnel * 3.0);
+    \\    float polished_visibility = metallic * pow(1.0 - roughness, 6.0);
+    \\    float polished_warm = pow(max(dot(reflection, normalize(float3(-0.48, 0.82, 0.31))), 0.0), 16.0);
+    \\    float polished_cool = pow(max(dot(reflection, normalize(float3(0.24, 0.91, -0.34))), 0.0), 12.0);
+    \\    ambient += (float3(1.0, 0.72, 0.46) * polished_warm +
+    \\        float3(0.54, 0.82, 1.0) * polished_cool) * polished_visibility * 0.82;
     \\    float3 emitted = in.base_color * emissive_strength;
     \\    float3 color = ambient + direct * mix(0.42, 1.0, visibility) + indicator_light + emitted;
     \\    color = aces_tonemap(color * uniforms.strip_size_exposure.z);
