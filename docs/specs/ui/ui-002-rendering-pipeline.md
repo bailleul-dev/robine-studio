@@ -12,6 +12,24 @@ sharp screen-space controls, labels, and inspection overlays above them.
 It is not a general game engine. Its geometry, material, camera, picking, and
 effect capabilities are bounded by musical-equipment representation.
 
+## Representation decision
+
+Physical equipment is rendered from actual 3D geometry. This is the canonical
+production path for pedals, amplifiers, cabinets, microphones, components,
+connectors, and cables.
+
+The renderer MAY use raster or vector assets as base artwork, decals, masks,
+normal detail, and material channels. It MUST NOT use independently authored 2D
+views as the source of truth for front, side, underside, open, or interior
+states. Those views are projections of the same 3D assembly so object identity,
+connectivity, articulation, picking, and lighting remain coherent.
+
+Screen-space 2D remains the canonical path for text, menus, inspectors, meters,
+focus indicators, and other non-physical overlays. A 2.5D experiment MAY remain
+in diagnostic tools for comparison, but it is not a second production equipment
+renderer. Future automatic impostors or levels of detail are backend
+optimizations and MUST preserve the semantics and appearance of the 3D scene.
+
 ## Pipeline
 
 Each frame proceeds through these stages:
@@ -48,6 +66,10 @@ The initial equipment pass MUST support:
 The rendering style may be realistic or stylized. The MVP does not require a
 general physically based renderer, arbitrary skeletal animation, terrain,
 particles, or game-world physics.
+
+Equipment geometry SHOULD be instanced by part and material, static draw data
+SHOULD be cached, and detail smaller than its projected pixel footprint SHOULD
+move to normal or material data rather than increasing mesh density.
 
 ## Screen-space operations
 
@@ -153,4 +175,3 @@ These are UI regression targets, not real-time audio-thread guarantees.
 - Surface destruction and recreation do not invalidate equipment state.
 - Two surfaces can render different equipment instances in one process.
 - The reference scene meets the initial performance targets.
-

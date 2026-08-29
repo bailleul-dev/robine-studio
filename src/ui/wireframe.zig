@@ -207,9 +207,9 @@ pub fn projectView(scene: *Scene, rig: *const demo.Rig, view: ViewState) !void {
     try drawToolbar(scene, layout.toolbar);
     switch (view) {
         .rig => {
-            const pedal_bounds = try drawPedalboard(scene, layout.board, rig);
+            const pedal_bounds = try layoutPedalBounds(layout.board, rig);
+            try drawPedalboard3dFrame(scene, layout.board);
             try drawSlotBar(scene, layout.slot_bar, pedal_bounds[0..rig.pedals.len]);
-            try drawMainConnections(scene, layout.board, pedal_bounds[0..rig.pedals.len], rig);
             try drawBrowser(scene, layout.browser);
         },
         .amplifier => {
@@ -308,9 +308,29 @@ fn drawPedalboard(scene: *Scene, bounds: Bounds, rig: *const demo.Rig) ![8]Bound
         try scene.line(.{ plank_bounds.left + width * 0.25, bounds.bottom }, .{ plank_bounds.left + width * 0.18, bounds.top() }, palette.board_b);
     }
 
+    const result = try layoutPedalBounds(bounds, rig);
+    for (rig.pedals, 0..) |pedal, index| {
+        const pedal_bounds = result[index];
+        if (pedal.presentation == .open)
+            try drawOpenPedal(scene, pedal_bounds, &pedal, index, rig.connections)
+        else
+            try drawClosedPedal(scene, pedal_bounds, &pedal, index, rig.connections);
+    }
+    return result;
+}
+
+fn drawPedalboard3dFrame(scene: *Scene, bounds: Bounds) !void {
+    try scene.fillRectangle(bounds, Color{ .r = 0.008, .g = 0.012, .b = 0.012 });
+    try scene.rectangle(bounds, palette.faint);
+    try scene.line(.{ bounds.left + 0.02, bounds.top() - 0.025 }, .{ bounds.right() - 0.02, bounds.top() - 0.025 }, palette.chrome_light);
+}
+
+fn layoutPedalBounds(bounds: Bounds, rig: *const demo.Rig) ![8]Bounds {
+    const pedals = rig.pedals;
+    if (pedals.len > 8) return error.TooManyPedalsForWireframe;
     var weights: [8]f32 = undefined;
     var total_weight: f32 = 0;
-    for (pedals, 0..) |pedal, index| {
+    for (pedals, 0..) |_, index| {
         weights[index] = pedal.enclosure.footprint_units;
         total_weight += weights[index];
     }
@@ -329,13 +349,8 @@ fn drawPedalboard(scene: *Scene, bounds: Bounds, rig: *const demo.Rig) ![8]Bound
             .height = bounds.height - 0.22,
         };
         result[index] = pedal_bounds;
-        if (pedal.presentation == .open)
-            try drawOpenPedal(scene, pedal_bounds, &pedal, index, rig.connections)
-        else
-            try drawClosedPedal(scene, pedal_bounds, &pedal, index, rig.connections);
         cursor += width + gap;
     }
-
     return result;
 }
 
@@ -636,6 +651,8 @@ fn drawLightingLabFrame(scene: *Scene) !void {
     try scene.rectangle(viewport, palette.faint);
     try scene.fillRectangle(header, palette.chrome);
     try scene.rectangle(header, palette.faint);
+    const comparison_split_x: f32 = -0.24;
+    try scene.line(.{ comparison_split_x, viewport.bottom }, .{ comparison_split_x, viewport.top() }, palette.faint);
 
     const back = Bounds{ .left = header.left + 0.015, .bottom = header.bottom + 0.025, .width = 0.085, .height = header.height - 0.050 };
     try scene.fillRectangle(back, palette.surface);
@@ -650,11 +667,46 @@ fn drawLightingLabFrame(scene: *Scene) !void {
     try scene.fillCircle(.{ live.left + 0.030, live.center()[1] }, 0.010, palette.green);
     try scene.line(.{ live.left + 0.055, live.center()[1] }, .{ live.right() - 0.020, live.center()[1] }, palette.mid);
 
+    const three_d_badge = Bounds{ .left = -0.46, .bottom = back.bottom, .width = 0.16, .height = back.height };
+    const layer_badge = Bounds{ .left = -0.27, .bottom = back.bottom, .width = 0.19, .height = back.height };
+    try drawComparisonBadge(scene, three_d_badge, false);
+    try drawComparisonBadge(scene, layer_badge, true);
+
     const strip = Bounds{ .left = header.right() - 0.30, .bottom = back.bottom, .width = 0.27, .height = back.height };
     try scene.fillRectangle(strip, palette.surface);
     try scene.rectangle(strip, palette.faint);
     try scene.line(.{ strip.left + 0.025, strip.center()[1] }, .{ strip.right() - 0.025, strip.center()[1] }, palette.bright);
     try scene.circle(.{ strip.left + strip.width * 0.66, strip.center()[1] }, 0.014, palette.amber);
+}
+
+fn drawComparisonBadge(scene: *Scene, bounds: Bounds, layered: bool) !void {
+    try scene.fillRectangle(bounds, palette.surface);
+    try scene.rectangle(bounds, if (layered) palette.bright else palette.amber);
+    const height = bounds.height * 0.54;
+    const width = height * 0.43;
+    var x = bounds.left + 0.025;
+    const y = bounds.bottom + (bounds.height - height) * 0.5;
+    if (layered) {
+        try drawDigit(scene, .{ x, y }, width, height, 2, palette.bright);
+        x += width + 0.012;
+        try scene.fillCircle(.{ x, y + 0.004 }, 0.004, palette.bright);
+        x += 0.012;
+        try drawDigit(scene, .{ x, y }, width, height, 5, palette.bright);
+        x += width + 0.014;
+    } else {
+        try drawDigit(scene, .{ x, y }, width, height, 3, palette.amber);
+        x += width + 0.016;
+    }
+    try drawLetterD(scene, .{ x, y }, width * 1.15, height, if (layered) palette.bright else palette.amber);
+}
+
+fn drawLetterD(scene: *Scene, origin: [2]f32, width: f32, height: f32, color: Color) !void {
+    try scene.line(origin, .{ origin[0], origin[1] + height }, color);
+    try scene.line(.{ origin[0], origin[1] + height }, .{ origin[0] + width * 0.68, origin[1] + height }, color);
+    try scene.line(.{ origin[0] + width * 0.68, origin[1] + height }, .{ origin[0] + width, origin[1] + height * 0.72 }, color);
+    try scene.line(.{ origin[0] + width, origin[1] + height * 0.72 }, .{ origin[0] + width, origin[1] + height * 0.28 }, color);
+    try scene.line(.{ origin[0] + width, origin[1] + height * 0.28 }, .{ origin[0] + width * 0.68, origin[1] }, color);
+    try scene.line(.{ origin[0] + width * 0.68, origin[1] }, origin, color);
 }
 
 fn drawLightingLabBrowser(scene: *Scene, bounds: Bounds) !void {

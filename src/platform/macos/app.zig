@@ -21,6 +21,7 @@ const Viewport = extern struct {
 
 pub const ContentMode = enum {
     wireframe,
+    pedalboard_3d,
     lighting_lab,
 };
 
@@ -39,6 +40,7 @@ pub const Options = struct {
     height: u32,
     line_vertices: []const wireframe.Vertex,
     fill_vertices: []const wireframe.Vertex,
+    equipment_vertices: []const lighting_lab.Vertex = &.{},
     mode: ContentMode = .wireframe,
     interaction: ?Interaction = null,
 };
@@ -46,6 +48,7 @@ pub const Options = struct {
 pub const Geometry = struct {
     line_vertices: []const wireframe.Vertex,
     fill_vertices: []const wireframe.Vertex,
+    equipment_vertices: []const lighting_lab.Vertex = &.{},
     mode: ContentMode = .wireframe,
 };
 
@@ -63,6 +66,8 @@ const RenderState = struct {
     fill_buffer: Object,
     line_count: usize,
     fill_count: usize,
+    equipment_buffer: Object,
+    equipment_count: usize,
     mode: ContentMode,
     lighting_lab: LightingLabRenderState,
     interaction: ?Interaction,
@@ -70,6 +75,7 @@ const RenderState = struct {
 
 const LightingLabRenderState = struct {
     pipeline: Object,
+    comparison_pipeline: Object,
     shadow_pipeline: Object,
     depth_state: Object,
     vertex_buffer: Object,
@@ -266,6 +272,120 @@ const shader_source =
     \\    color = pow(color, float3(1.0 / 2.2));
     \\    return float4(color, 1.0);
     \\}
+    \\
+    \\struct LayerRasterData {
+    \\    float4 position [[position]];
+    \\    float2 uv;
+    \\};
+    \\
+    \\vertex LayerRasterData layer_vertex(uint vertex_id [[vertex_id]]) {
+    \\    const float2 positions[6] = {
+    \\        float2(-1.0, -1.0), float2(1.0, -1.0), float2(1.0, 1.0),
+    \\        float2(-1.0, -1.0), float2(1.0, 1.0), float2(-1.0, 1.0)
+    \\    };
+    \\    const float2 coordinates[6] = {
+    \\        float2(0.0, 1.0), float2(1.0, 1.0), float2(1.0, 0.0),
+    \\        float2(0.0, 1.0), float2(1.0, 0.0), float2(0.0, 0.0)
+    \\    };
+    \\    LayerRasterData out;
+    \\    out.position = float4(positions[vertex_id], 0.0, 1.0);
+    \\    out.uv = coordinates[vertex_id];
+    \\    return out;
+    \\}
+    \\
+    \\float layer_height(float2 point) {
+    \\    float radius = length(point);
+    \\    float collar = 0.16 * (1.0 - smoothstep(0.330, 0.350, radius));
+    \\    float body = 0.82 * (1.0 - smoothstep(0.265, 0.315, radius));
+    \\    return max(collar, body);
+    \\}
+    \\
+    \\float3 shade_layer_material(
+    \\    float3 base_color,
+    \\    float roughness,
+    \\    float metallic,
+    \\    float3 normal,
+    \\    float3 view_direction,
+    \\    float3 light_direction,
+    \\    float visibility,
+    \\    constant PbrUniforms& uniforms) {
+    \\    float3 half_direction = normalize(view_direction + light_direction);
+    \\    float ndotl = max(dot(normal, light_direction), 0.0);
+    \\    float ndotv = max(dot(normal, view_direction), 0.0);
+    \\    float3 f0 = mix(float3(0.04), base_color, metallic);
+    \\    float distribution = distribution_ggx(normal, half_direction, roughness);
+    \\    float geometry = geometry_smith(normal, view_direction, light_direction, roughness);
+    \\    float3 fresnel = fresnel_schlick(max(dot(half_direction, view_direction), 0.0), f0);
+    \\    float3 specular = distribution * geometry * fresnel / max(4.0 * ndotv * ndotl, 0.001);
+    \\    float3 diffuse = (1.0 - fresnel) * (1.0 - metallic) * base_color / M_PI_F;
+    \\    float3 direct = (diffuse + specular) * float3(1.0, 0.78, 0.54) * 3.8 * ndotl * visibility;
+    \\    float3 reflection = reflect(-view_direction, normal);
+    \\    float horizon = clamp(reflection.y * 0.5 + 0.5, 0.0, 1.0);
+    \\    float3 environment = mix(float3(0.006, 0.010, 0.014), float3(0.10, 0.16, 0.18), horizon);
+    \\    float moving_strip = pow(max(dot(reflection, light_direction), 0.0), mix(180.0, 12.0, roughness));
+    \\    environment += float3(1.0, 0.72, 0.46) * moving_strip * 2.8;
+    \\    float fixed_strip = pow(max(dot(reflection, normalize(float3(-0.72, 0.40, 0.56))), 0.0),
+    \\        mix(120.0, 10.0, roughness));
+    \\    environment += float3(0.30, 0.58, 0.70) * fixed_strip * 1.6;
+    \\    float3 ambient_fresnel = fresnel_schlick(max(dot(normal, view_direction), 0.0), f0);
+    \\    float3 ambient = environment * (ambient_fresnel + base_color * (1.0 - metallic) * 0.22) *
+    \\        uniforms.strip_size_exposure.w;
+    \\    return ambient + direct;
+    \\}
+    \\
+    \\fragment float4 layer_fragment(
+    \\    LayerRasterData in [[stage_in]],
+    \\    constant PbrUniforms& uniforms [[buffer(1)]]) {
+    \\    const float viewport_aspect = 0.625;
+    \\    float2 point = float2((in.uv.x - 0.5) * 2.0 * viewport_aspect, (0.5 - in.uv.y) * 2.0);
+    \\    float radius = length(point);
+    \\    float height = layer_height(point);
+    \\    const float epsilon = 0.003;
+    \\    float height_dx = layer_height(point + float2(epsilon, 0.0)) -
+    \\        layer_height(point - float2(epsilon, 0.0));
+    \\    float height_dy = layer_height(point + float2(0.0, epsilon)) -
+    \\        layer_height(point - float2(0.0, epsilon));
+    \\    float3 normal = radius < 0.350 ? normalize(float3(-height_dx * 4.0, -height_dy * 4.0, epsilon * 2.0)) :
+    \\        float3(0.0, 0.0, 1.0);
+    \\    float3 base_color = float3(0.050, 0.075, 0.068);
+    \\    float roughness = 0.31;
+    \\    float metallic = 0.42;
+    \\    if (radius < 0.315) {
+    \\        base_color = float3(0.070, 0.088, 0.084);
+    \\        roughness = 0.14;
+    \\        metallic = 0.96;
+    \\    } else if (radius < 0.350) {
+    \\        base_color = float3(0.32, 0.35, 0.34);
+    \\        roughness = 0.19;
+    \\        metallic = 1.0;
+    \\    }
+    \\    bool indicator = abs(point.x) < 0.026 && point.y > 0.205 && point.y < 0.405;
+    \\    if (indicator) {
+    \\        base_color = float3(0.95, 0.42, 0.055);
+    \\        roughness = 0.25;
+    \\        metallic = 0.35;
+    \\        normal = float3(0.0, 0.0, 1.0);
+    \\    }
+    \\    float3 mapped_light = float3(uniforms.light_position.x, -uniforms.light_position.z,
+    \\        uniforms.light_position.y);
+    \\    float3 light_direction = normalize(mapped_light - float3(point * 3.0, height));
+    \\    float3 mapped_camera = float3(uniforms.camera_position.x, -uniforms.camera_position.z,
+    \\        uniforms.camera_position.y);
+    \\    float3 view_direction = normalize(mapped_camera - float3(point * 3.0, height));
+    \\    float visibility = 1.0;
+    \\    if (radius >= 0.350) {
+    \\        float front_light = max(light_direction.z, 0.18);
+    \\        float2 shadow_offset = -light_direction.xy / front_light * 0.16;
+    \\        float shadow_distance = length(point - shadow_offset) - 0.350;
+    \\        float softness = 0.045 + 0.035 * (1.0 - front_light);
+    \\        visibility = mix(0.38, 1.0, smoothstep(-softness, softness, shadow_distance));
+    \\    }
+    \\    float3 color = shade_layer_material(base_color, roughness, metallic, normal,
+    \\        view_direction, light_direction, visibility, uniforms);
+    \\    color = aces_tonemap(color * uniforms.strip_size_exposure.z);
+    \\    color = pow(color, float3(1.0 / 2.2));
+    \\    return float4(color, 1.0);
+    \\}
 ;
 
 pub fn run(options: Options) !void {
@@ -307,6 +427,17 @@ pub fn run(options: Options) !void {
         options.fill_vertices.len * @sizeOf(wireframe.Vertex),
         0,
     );
+    const equipment_buffer = try send3(
+        Object,
+        *const anyopaque,
+        usize,
+        usize,
+        device,
+        "newBufferWithBytes:length:options:",
+        @ptrCast(options.equipment_vertices.ptr),
+        options.equipment_vertices.len * @sizeOf(lighting_lab.Vertex),
+        0,
+    );
     render_state = .{
         .device = device,
         .command_queue = command_queue,
@@ -315,6 +446,8 @@ pub fn run(options: Options) !void {
         .fill_buffer = fill_buffer,
         .line_count = options.line_vertices.len,
         .fill_count = options.fill_vertices.len,
+        .equipment_buffer = equipment_buffer,
+        .equipment_count = options.equipment_vertices.len,
         .mode = options.mode,
         .lighting_lab = lab_render_state,
         .interaction = options.interaction,
@@ -408,6 +541,17 @@ fn createLightingLabRenderState(device: Object, library: Object) !LightingLabRen
     try send1(void, usize, pbr_descriptor, "setDepthAttachmentPixelFormat:", 252);
     const pbr_pipeline = try send2(Object, Object, Object, device, "newRenderPipelineStateWithDescriptor:error:", pbr_descriptor, null);
 
+    const layer_vertex = try send1(Object, Object, library, "newFunctionWithName:", try nsString("layer_vertex"));
+    const layer_fragment = try send1(Object, Object, library, "newFunctionWithName:", try nsString("layer_fragment"));
+    const layer_descriptor = try send0(Object, try send0(Object, try classNamed("MTLRenderPipelineDescriptor"), "alloc"), "init");
+    try send1(void, Object, layer_descriptor, "setVertexFunction:", layer_vertex);
+    try send1(void, Object, layer_descriptor, "setFragmentFunction:", layer_fragment);
+    const layer_attachments = try send0(Object, layer_descriptor, "colorAttachments");
+    const layer_color = try send1(Object, usize, layer_attachments, "objectAtIndexedSubscript:", 0);
+    try send1(void, usize, layer_color, "setPixelFormat:", 80);
+    try send1(void, usize, layer_descriptor, "setDepthAttachmentPixelFormat:", 252);
+    const layer_pipeline = try send2(Object, Object, Object, device, "newRenderPipelineStateWithDescriptor:error:", layer_descriptor, null);
+
     const shadow_vertex = try send1(Object, Object, library, "newFunctionWithName:", try nsString("shadow_vertex"));
     const shadow_descriptor = try send0(Object, try send0(Object, try classNamed("MTLRenderPipelineDescriptor"), "alloc"), "init");
     try send1(void, Object, shadow_descriptor, "setVertexFunction:", shadow_vertex);
@@ -435,6 +579,7 @@ fn createLightingLabRenderState(device: Object, library: Object) !LightingLabRen
 
     return .{
         .pipeline = pbr_pipeline,
+        .comparison_pipeline = layer_pipeline,
         .shadow_pipeline = shadow_pipeline,
         .depth_state = depth_state,
         .vertex_buffer = vertex_buffer,
@@ -516,13 +661,18 @@ fn replaceGeometry(state: *RenderState, geometry: Geometry) !void {
     const new_line_buffer = try createVertexBuffer(state.device, geometry.line_vertices);
     errdefer send0(void, new_line_buffer, "release") catch {};
     const new_fill_buffer = try createVertexBuffer(state.device, geometry.fill_vertices);
+    errdefer send0(void, new_fill_buffer, "release") catch {};
+    const new_equipment_buffer = try createEquipmentVertexBuffer(state.device, geometry.equipment_vertices);
 
     try send0(void, state.line_buffer, "release");
     try send0(void, state.fill_buffer, "release");
+    try send0(void, state.equipment_buffer, "release");
     state.line_buffer = new_line_buffer;
     state.fill_buffer = new_fill_buffer;
+    state.equipment_buffer = new_equipment_buffer;
     state.line_count = geometry.line_vertices.len;
     state.fill_count = geometry.fill_vertices.len;
+    state.equipment_count = geometry.equipment_vertices.len;
     state.mode = geometry.mode;
 }
 
@@ -540,6 +690,20 @@ fn createVertexBuffer(device: Object, vertices: []const wireframe.Vertex) !Objec
     );
 }
 
+fn createEquipmentVertexBuffer(device: Object, vertices: []const lighting_lab.Vertex) !Object {
+    return send3(
+        Object,
+        *const anyopaque,
+        usize,
+        usize,
+        device,
+        "newBufferWithBytes:length:options:",
+        @ptrCast(vertices.ptr),
+        vertices.len * @sizeOf(lighting_lab.Vertex),
+        0,
+    );
+}
+
 fn draw(view: Object) !void {
     const state = render_state orelse return;
     const descriptor = try send0(Object, view, "currentRenderPassDescriptor");
@@ -549,24 +713,80 @@ fn draw(view: Object) !void {
 
     const command_buffer = try send0(Object, state.command_queue, "commandBuffer");
     const drawable_size = try send0(Size, view, "drawableSize");
-    const lab_viewport = Viewport{
+    const comparison_gap = drawable_size.width * 0.012;
+    const comparison_width = (drawable_size.width * 0.74 - comparison_gap) * 0.5;
+    const three_d_viewport = Viewport{
         .origin_x = drawable_size.width * 0.01,
         .origin_y = drawable_size.height * 0.15,
-        .width = drawable_size.width * 0.74,
+        .width = comparison_width,
         .height = drawable_size.height * 0.77,
         .z_near = 0,
         .z_far = 1,
     };
-    const uniforms = lightingUniforms(@floatCast(lab_viewport.width / lab_viewport.height));
+    const layer_viewport = Viewport{
+        .origin_x = three_d_viewport.origin_x + comparison_width + comparison_gap,
+        .origin_y = three_d_viewport.origin_y,
+        .width = comparison_width,
+        .height = three_d_viewport.height,
+        .z_near = 0,
+        .z_far = 1,
+    };
+    const pedalboard_viewport = Viewport{
+        .origin_x = drawable_size.width * 0.01,
+        .origin_y = drawable_size.height * 0.08,
+        .width = drawable_size.width * 0.74,
+        .height = drawable_size.height * 0.36,
+        .z_near = 0,
+        .z_far = 1,
+    };
+    const lab_uniforms = lightingUniforms(@floatCast(three_d_viewport.width / three_d_viewport.height));
+    const pedalboard_uniforms = pedalboardUniforms(@floatCast(pedalboard_viewport.width / pedalboard_viewport.height));
 
-    if (state.mode == .lighting_lab) try drawShadowPass(command_buffer, &state, &uniforms);
+    switch (state.mode) {
+        .wireframe => {},
+        .lighting_lab => try drawShadowPass(
+            command_buffer,
+            &state,
+            &lab_uniforms,
+            state.lighting_lab.vertex_buffer,
+            state.lighting_lab.vertex_count,
+        ),
+        .pedalboard_3d => try drawShadowPass(
+            command_buffer,
+            &state,
+            &pedalboard_uniforms,
+            state.equipment_buffer,
+            state.equipment_count,
+        ),
+    }
 
     const encoder = try send1(Object, Object, command_buffer, "renderCommandEncoderWithDescriptor:", descriptor);
     try send1(void, Object, encoder, "setRenderPipelineState:", state.pipeline);
     try send3(void, Object, usize, usize, encoder, "setVertexBuffer:offset:atIndex:", state.fill_buffer, 0, 0);
     try send3(void, usize, usize, usize, encoder, "drawPrimitives:vertexStart:vertexCount:", 3, 0, state.fill_count);
 
-    if (state.mode == .lighting_lab) try drawLightingLabPass(encoder, &state, &uniforms, lab_viewport);
+    switch (state.mode) {
+        .wireframe => {},
+        .lighting_lab => {
+            try drawPbrPass(
+                encoder,
+                &state,
+                &lab_uniforms,
+                three_d_viewport,
+                state.lighting_lab.vertex_buffer,
+                state.lighting_lab.vertex_count,
+            );
+            try drawLightingComparisonPass(encoder, &state, &lab_uniforms, layer_viewport);
+        },
+        .pedalboard_3d => try drawPbrPass(
+            encoder,
+            &state,
+            &pedalboard_uniforms,
+            pedalboard_viewport,
+            state.equipment_buffer,
+            state.equipment_count,
+        ),
+    }
 
     try send1(void, Object, encoder, "setDepthStencilState:", null);
     try send1(void, Viewport, encoder, "setViewport:", .{
@@ -585,7 +805,13 @@ fn draw(view: Object) !void {
     try send0(void, command_buffer, "commit");
 }
 
-fn drawShadowPass(command_buffer: Object, state: *const RenderState, uniforms: *const PbrUniforms) !void {
+fn drawShadowPass(
+    command_buffer: Object,
+    state: *const RenderState,
+    uniforms: *const PbrUniforms,
+    vertex_buffer: Object,
+    vertex_count: usize,
+) !void {
     const descriptor = try send0(Object, try classNamed("MTLRenderPassDescriptor"), "renderPassDescriptor");
     const depth_attachment = try send0(Object, descriptor, "depthAttachment");
     try send1(void, Object, depth_attachment, "setTexture:", state.lighting_lab.shadow_texture);
@@ -604,21 +830,36 @@ fn drawShadowPass(command_buffer: Object, state: *const RenderState, uniforms: *
         .z_near = 0,
         .z_far = 1,
     });
-    try send3(void, Object, usize, usize, encoder, "setVertexBuffer:offset:atIndex:", state.lighting_lab.vertex_buffer, 0, 0);
+    try send3(void, Object, usize, usize, encoder, "setVertexBuffer:offset:atIndex:", vertex_buffer, 0, 0);
     try send3(void, *const anyopaque, usize, usize, encoder, "setVertexBytes:length:atIndex:", @ptrCast(uniforms), @sizeOf(PbrUniforms), 1);
-    try send3(void, usize, usize, usize, encoder, "drawPrimitives:vertexStart:vertexCount:", 3, 0, state.lighting_lab.vertex_count);
+    try send3(void, usize, usize, usize, encoder, "drawPrimitives:vertexStart:vertexCount:", 3, 0, vertex_count);
     try send0(void, encoder, "endEncoding");
 }
 
-fn drawLightingLabPass(encoder: Object, state: *const RenderState, uniforms: *const PbrUniforms, viewport: Viewport) !void {
+fn drawPbrPass(
+    encoder: Object,
+    state: *const RenderState,
+    uniforms: *const PbrUniforms,
+    viewport: Viewport,
+    vertex_buffer: Object,
+    vertex_count: usize,
+) !void {
     try send1(void, Object, encoder, "setRenderPipelineState:", state.lighting_lab.pipeline);
     try send1(void, Object, encoder, "setDepthStencilState:", state.lighting_lab.depth_state);
     try send1(void, Viewport, encoder, "setViewport:", viewport);
-    try send3(void, Object, usize, usize, encoder, "setVertexBuffer:offset:atIndex:", state.lighting_lab.vertex_buffer, 0, 0);
+    try send3(void, Object, usize, usize, encoder, "setVertexBuffer:offset:atIndex:", vertex_buffer, 0, 0);
     try send3(void, *const anyopaque, usize, usize, encoder, "setVertexBytes:length:atIndex:", @ptrCast(uniforms), @sizeOf(PbrUniforms), 1);
     try send3(void, *const anyopaque, usize, usize, encoder, "setFragmentBytes:length:atIndex:", @ptrCast(uniforms), @sizeOf(PbrUniforms), 1);
     try send2(void, Object, usize, encoder, "setFragmentTexture:atIndex:", state.lighting_lab.shadow_texture, 0);
-    try send3(void, usize, usize, usize, encoder, "drawPrimitives:vertexStart:vertexCount:", 3, 0, state.lighting_lab.vertex_count);
+    try send3(void, usize, usize, usize, encoder, "drawPrimitives:vertexStart:vertexCount:", 3, 0, vertex_count);
+}
+
+fn drawLightingComparisonPass(encoder: Object, state: *const RenderState, uniforms: *const PbrUniforms, viewport: Viewport) !void {
+    try send1(void, Object, encoder, "setDepthStencilState:", null);
+    try send1(void, Object, encoder, "setRenderPipelineState:", state.lighting_lab.comparison_pipeline);
+    try send1(void, Viewport, encoder, "setViewport:", viewport);
+    try send3(void, *const anyopaque, usize, usize, encoder, "setFragmentBytes:length:atIndex:", @ptrCast(uniforms), @sizeOf(PbrUniforms), 1);
+    try send3(void, usize, usize, usize, encoder, "drawPrimitives:vertexStart:vertexCount:", 3, 0, 6);
 }
 
 fn lightingUniforms(aspect: f32) PbrUniforms {
@@ -644,6 +885,30 @@ fn lightingUniforms(aspect: f32) PbrUniforms {
             lighting_lab.studio_profile.environment_strength,
         },
         .time = time,
+    };
+}
+
+fn pedalboardUniforms(aspect: f32) PbrUniforms {
+    const camera = [3]f32{ 0, 6.8, 7.4 };
+    const target = [3]f32{ 0, 0.55, 0 };
+    const light = [3]f32{ -4.8, 7.5, 5.6 };
+    const view = lookAt(camera, target, .{ 0, 1, 0 });
+    const projection = perspective(31.0 * std.math.pi / 180.0, aspect, 0.1, 40.0);
+    const light_view = lookAt(light, target, .{ 0, 1, 0 });
+    const light_projection = perspective(76.0 * std.math.pi / 180.0, 1.0, 0.2, 30.0);
+    return .{
+        .view_projection = multiplyMatrices(projection, view),
+        .light_view_projection = multiplyMatrices(light_projection, light_view),
+        .camera_position = .{ camera[0], camera[1], camera[2], 1 },
+        .light_position = .{ light[0], light[1], light[2], 1 },
+        .light_axis = .{ 0, 1, 0, 0 },
+        .strip_size_exposure = .{
+            2.1,
+            7.0,
+            1.16,
+            0.62,
+        },
+        .time = 0,
     };
 }
 

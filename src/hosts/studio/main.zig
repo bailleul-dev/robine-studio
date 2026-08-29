@@ -4,6 +4,7 @@ const std = @import("std");
 
 const Studio = struct {
     scene: robine.ui.wireframe.Scene = .{},
+    pedalboard_mesh: robine.ui.pedalboard_3d.Mesh = .{},
     view: robine.ui.wireframe.ViewState = .rig,
 
     fn project(self: *Studio) !void {
@@ -27,13 +28,19 @@ const Studio = struct {
         return .{
             .line_vertices = self.scene.lines(),
             .fill_vertices = self.scene.fills(),
-            .mode = if (self.view == .lighting_lab) .lighting_lab else .wireframe,
+            .equipment_vertices = self.pedalboard_mesh.items(),
+            .mode = switch (self.view) {
+                .rig => .pedalboard_3d,
+                .amplifier => .wireframe,
+                .lighting_lab => .lighting_lab,
+            },
         };
     }
 };
 
 pub fn main() !void {
     var studio = Studio{};
+    try robine.ui.pedalboard_3d.build(&studio.pedalboard_mesh, &robine.model.demo.rig);
     try studio.project();
     try platform.run(.{
         .title = "Robine Studio — semantic equipment wireframe",
@@ -41,7 +48,8 @@ pub fn main() !void {
         .height = 760,
         .line_vertices = studio.scene.lines(),
         .fill_vertices = studio.scene.fills(),
-        .mode = .wireframe,
+        .equipment_vertices = studio.pedalboard_mesh.items(),
+        .mode = .pedalboard_3d,
         .interaction = .{
             .context = @ptrCast(&studio),
             .pointer_down = &Studio.pointerDown,

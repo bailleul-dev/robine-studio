@@ -104,6 +104,27 @@ percentage-closer filtering, and an ACES-like display curve. Backend-specific
 objects remain inside `platform`; declarative mesh, material, and profile data
 remain inside `ui`.
 
+## Reference comparison view
+
+The Lighting Lab presents an animated side-by-side comparison driven by the same
+material values, light orbit, exposure, environment response, and display curve:
+
+- The `3D` side renders procedural triangles with perspective, a depth buffer,
+  and a shadow map.
+- The `2.5D` side renders one screen-aligned layer. An analytic height field
+  reconstructs per-pixel normals and an offset silhouette approximates the cast
+  shadow.
+
+The comparison is a visual architecture test, not a performance benchmark. It
+MUST keep the light phase synchronized so differences come from representation
+rather than from art direction. The 2.5D side demonstrates the eventual asset
+contract: an AI-generated height or normal channel can replace the analytic
+field without changing the runtime lighting model.
+
+UI-002 selects actual 3D geometry as the production representation for physical
+equipment. The 2.5D half of this view remains a diagnostic reference only; it
+does not define an alternate asset path or equipment scene model.
+
 ## AI asset-generation handoff
 
 An asset request handed to a generation skill MUST include:
