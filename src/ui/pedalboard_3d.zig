@@ -235,10 +235,8 @@ fn addStudioRoom(mesh: *Mesh) !void {
     try addBox(mesh, .{ -side_x + 0.15, floor_top + 0.18, 0 }, .{ 0.16, 0.34, 17.8 }, materials.studio_wall_trim);
     try addBox(mesh, .{ side_x - 0.15, floor_top + 0.18, 0 }, .{ 0.16, 0.34, 17.8 }, materials.studio_wall_trim);
 
-    try addWoodWallSconce(mesh, .{ -5.65, 5.05, back_z + 0.26 });
-    try addWoodWallSconce(mesh, .{ 5.65, 5.05, back_z + 0.26 });
-    try addSideWoodSconce(mesh, .{ -side_x + 0.26, 5.10, -2.20 }, true);
-    try addSideWoodSconce(mesh, .{ side_x - 0.26, 5.10, -2.20 }, false);
+    try addWoodWallSconce(mesh, .{ -5.65, 3.70, back_z + 0.26 });
+    try addWoodWallSconce(mesh, .{ 5.65, 3.70, back_z + 0.26 });
 }
 
 fn addWoodWallSconce(mesh: *Mesh, center: [3]f32) !void {

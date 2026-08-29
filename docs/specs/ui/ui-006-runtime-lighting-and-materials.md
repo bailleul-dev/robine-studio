@@ -76,17 +76,17 @@ are deferred until an equipment use case justifies them.
 A `LightingProfile` is a reusable scene-level description independent from the
 equipment model. The initial studio profile contains:
 
-- One static warm vertical panel light used as the shadow-casting key.
-- One restrained cool panel-aligned fill and bounded local light volumes for
-  practical fixtures and wall sconces.
+- One static warm side-wall source used as the shadow-casting key.
+- One restrained warm fill and bounded conical light volumes for wall sconces.
 - A bounded analytic environment contribution so unlit faces remain readable.
 - Exposure and display-transform parameters.
 - Shadow-map resolution, bias, and filtering parameters.
 
 Production studio lights have visible procedural fixtures. Their emitter
 geometry, world-space anchor, color family, and analytic light description MUST
-agree so a highlight never appears to come from an absent softbox. The animated
-orbiting strip remains specific to the Lighting Lab diagnostic view.
+agree so a highlight never appears to come from an absent fixture. Wall sconces
+MAY define upper and lower cone directions independently. The animated orbiting
+strip remains specific to the Lighting Lab diagnostic view.
 
 Lights are defined relative to the focused equipment bounds or named semantic
 anchors, not as arbitrary pixel coordinates. The same profile MUST adapt to a

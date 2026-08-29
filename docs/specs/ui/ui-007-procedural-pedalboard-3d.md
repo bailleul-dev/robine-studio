@@ -18,11 +18,10 @@ The initial projection contains:
 - A basic combo amplifier placed behind the pedal row on the same floor. Its
   cabinet, grille, speaker, piping, control panel, knobs, input, badge, handle,
   and feet are procedural geometry with runtime materials.
-- A spacious studio shell with a rear wall, lateral returns, wooden baseboards,
-  and slatted acoustic treatment.
-- Two freestanding panel lights with weighted tripod bases plus two warm wall
-  sconces. Their visible emitters share the positions and colors used by the
-  runtime lighting profile.
+- A spacious, cocooning studio shell with warm plaster walls, lateral returns,
+  and wooden baseboards.
+- Square oak wall sconces with concealed upper and lower emitters. Their visible
+  warm washes use bounded runtime spot cones rather than baked wall gradients.
 - Gently rounded enclosures sized from `PedalEnclosure.dimensions` in millimetres.
 - Layout spacing derived from physical width and bounded semantic gaps.
 - Pedals projected in signal order from right to left, matching physical
@@ -68,10 +67,10 @@ that model is introduced.
 
 - The board uses the production 3D pipeline selected by UI-002.
 - One static warm strip light placed laterally and one filtered shadow map
-  illuminate the rig view from the visible left studio lamp. A restrained cool
-  fill aligned with the visible right lamp separates the opposite edges without
-  cancelling the key-light shadows. Wall sconces and lamp panels add bounded
-  local illumination; decorative continuous animation is disabled.
+  illuminate the rig view from the left-wall sconce family. A restrained warm
+  fill aligned with the right wall separates opposite edges without cancelling
+  the key-light shadows. Rear sconces add directional upper and lower local
+  illumination; decorative continuous animation is disabled.
 - Camera, key-light position and size, key intensity, exposure, environment
   strength, and fill radiance belong to one declarative `ViewProfile` in `ui`.
   The Metal backend consumes this profile and does not own product-view tuning.
@@ -88,8 +87,8 @@ that model is introduced.
 - The combo has a plausible studio-combo scale relative to a single pedal and
   remains substantially wider and taller than the pedal enclosures.
 - Rear and side walls bound the parquet as a room rather than an infinite stage.
-- Both standing lights and both wall sconces are visible scene objects whose
-  emission affects nearby materials.
+- Wooden rear and side sconces are visible scene objects whose upper and lower
+  emitters affect nearby materials.
 - Staggered parquet planks cover the complete visible 3D background without
   exposing a black perimeter.
 - The double pedal is physically wider than a single pedal.

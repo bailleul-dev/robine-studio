@@ -100,6 +100,7 @@ const LightingLabRenderState = struct {
 const GpuEmissiveLight = extern struct {
     position_radius: [4]f32 = .{ 0, 0, 0, 0 },
     color_intensity: [4]f32 = .{ 0, 0, 0, 0 },
+    direction_cone: [4]f32 = .{ 0, 0, 0, -1 },
 };
 
 const PbrUniforms = extern struct {
@@ -109,8 +110,7 @@ const PbrUniforms = extern struct {
     light_position: [4]f32,
     light_axis: [4]f32,
     strip_size_exposure: [4]f32,
-    time: f32,
-    padding: [3]f32 = .{ 0, 0, 0 },
+    time_fill: [4]f32 = .{ 0, 0, 0, 0 },
     emissive_lights: [pedalboard_3d.Mesh.max_emissive_lights]GpuEmissiveLight =
         [_]GpuEmissiveLight{.{}} ** pedalboard_3d.Mesh.max_emissive_lights,
     emissive_light_count: u32 = 0,
@@ -161,11 +161,11 @@ const shader_source =
     \\    float4 light_position;
     \\    float4 light_axis;
     \\    float4 strip_size_exposure;
-    \\    float time;
-    \\    float3 padding;
+    \\    float4 time_fill;
     \\    struct EmissiveLight {
     \\        float4 position_radius;
     \\        float4 color_intensity;
+    \\        float4 direction_cone;
     \\    } emissive_lights[16];
     \\    uint emissive_light_count;
     \\    uint3 emissive_padding;
@@ -295,16 +295,22 @@ const shader_source =
     \\    float3 fill_specular = fill_distribution * fill_geometry * fill_fresnel /
     \\        max(4.0 * fill_ndotv * fill_ndotl, 0.001);
     \\    float3 fill_diffuse = (1.0 - fill_fresnel) * (1.0 - metallic) * in.base_color / M_PI_F;
-    \\    direct += (fill_diffuse + fill_specular) * uniforms.padding * fill_ndotl;
+    \\    direct += (fill_diffuse + fill_specular) * uniforms.time_fill.yzw * fill_ndotl;
     \\    float3 indicator_light = float3(0.0);
     \\    for (uint light_index = 0; light_index < min(uniforms.emissive_light_count, 16u); ++light_index) {
     \\        float3 difference = uniforms.emissive_lights[light_index].position_radius.xyz - in.world_position;
     \\        float radius = uniforms.emissive_lights[light_index].position_radius.w;
     \\        float distance_squared = max(dot(difference, difference), 0.006);
     \\        float distance_to_light = sqrt(distance_squared);
+    \\        float3 led_l = difference / max(distance_to_light, 0.001);
     \\        float falloff = clamp(1.0 - distance_to_light / max(radius, 0.001), 0.0, 1.0);
     \\        falloff = falloff * falloff / max(distance_squared, 0.045);
-    \\        float3 led_l = difference / max(distance_to_light, 0.001);
+    \\        float cone_cosine = uniforms.emissive_lights[light_index].direction_cone.w;
+    \\        if (cone_cosine > -0.5) {
+    \\            float3 cone_direction = normalize(uniforms.emissive_lights[light_index].direction_cone.xyz);
+    \\            float cone_alignment = dot(-led_l, cone_direction);
+    \\            falloff *= smoothstep(cone_cosine, min(cone_cosine + 0.18, 0.98), cone_alignment);
+    \\        }
     \\        float led_ndotl = max(dot(n, led_l), 0.0);
     \\        float3 led_h = normalize(v + led_l);
     \\        float3 led_fresnel = fresnel_schlick(max(dot(led_h, v), 0.0), f0);
@@ -319,7 +325,7 @@ const shader_source =
     \\    }
     \\    float3 reflection = reflect(-v, n);
     \\    float horizon = clamp(reflection.y * 0.5 + 0.5, 0.0, 1.0);
-    \\    float3 environment = mix(float3(0.006, 0.010, 0.014), float3(0.10, 0.16, 0.18), horizon);
+    \\    float3 environment = mix(float3(0.010, 0.007, 0.004), float3(0.14, 0.095, 0.055), horizon);
     \\    float3 to_strip = normalize(uniforms.light_position.xyz - in.world_position);
     \\    float key_reflection_roughness = clamp(roughness + uniforms.strip_size_exposure.x * 0.035, 0.0, 1.0);
     \\    float strip_reflection = pow(max(dot(reflection, to_strip), 0.0), mix(150.0, 8.0, key_reflection_roughness));
@@ -327,7 +333,7 @@ const shader_source =
     \\    float3 fixed_strip_direction = normalize(float3(0.22, 0.91, -0.35));
     \\    float fixed_strip_roughness = clamp(roughness + 0.20, 0.0, 1.0);
     \\    float fixed_strip = pow(max(dot(reflection, fixed_strip_direction), 0.0), mix(110.0, 7.0, fixed_strip_roughness));
-    \\    environment += float3(0.30, 0.58, 0.70) * fixed_strip * 2.2;
+    \\    environment += float3(0.42, 0.32, 0.22) * fixed_strip * 1.35;
     \\    float3 ambient_fresnel = fresnel_schlick(max(dot(n, v), 0.0), f0);
     \\    float3 ambient = environment * (ambient_fresnel + in.base_color * (1.0 - metallic) * 0.22) *
     \\        uniforms.strip_size_exposure.w;
@@ -339,7 +345,7 @@ const shader_source =
     \\    float polished_warm = pow(max(dot(reflection, normalize(float3(-0.48, 0.82, 0.31))), 0.0), 16.0);
     \\    float polished_cool = pow(max(dot(reflection, normalize(float3(0.24, 0.91, -0.34))), 0.0), 12.0);
     \\    ambient += (float3(1.0, 0.72, 0.46) * polished_warm +
-    \\        float3(0.54, 0.82, 1.0) * polished_cool) * polished_visibility * 0.82;
+    \\        float3(0.70, 0.52, 0.34) * polished_cool) * polished_visibility * 0.62;
     \\    float3 emitted = in.base_color * emissive_strength;
     \\    float3 color = ambient + direct * mix(0.42, 1.0, visibility) + indicator_light + emitted;
     \\    color = aces_tonemap(color * uniforms.strip_size_exposure.z);
@@ -978,7 +984,7 @@ fn lightingUniforms(aspect: f32) PbrUniforms {
             lighting_lab.studio_profile.exposure,
             lighting_lab.studio_profile.environment_strength,
         },
-        .time = time,
+        .time_fill = .{ time, 0, 0, 0 },
     };
 }
 
@@ -1003,14 +1009,14 @@ fn pedalboardUniforms(aspect: f32, lights: []const pedalboard_3d.EmissiveLight, 
             profile.exposure,
             profile.environment_strength,
         },
-        .time = 0,
-        .padding = profile.fill_radiance,
+        .time_fill = .{ 0, profile.fill_radiance[0], profile.fill_radiance[1], profile.fill_radiance[2] },
     };
     const light_count = @min(lights.len, pedalboard_3d.Mesh.max_emissive_lights);
     for (lights[0..light_count], 0..) |emissive_light, index| {
         uniforms.emissive_lights[index] = .{
             .position_radius = .{ emissive_light.position[0], emissive_light.position[1], emissive_light.position[2], emissive_light.radius },
             .color_intensity = .{ emissive_light.color[0], emissive_light.color[1], emissive_light.color[2], emissive_light.intensity },
+            .direction_cone = .{ emissive_light.direction[0], emissive_light.direction[1], emissive_light.direction[2], emissive_light.cone_cosine },
         };
     }
     uniforms.emissive_light_count = @intCast(light_count);
