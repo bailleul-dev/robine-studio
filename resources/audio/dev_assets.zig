@@ -10,6 +10,14 @@ pub const default_nam = @embedFile(
     "models/nam/dumble-ods-102-ford-hyper-accuracy-plus/SLAMMIN_DUMBLE_FORD_CLN_MAIN_S.nam",
 );
 
+pub const bogner_shiva_default_nam = @embedFile(
+    "models/nam/bogner-shiva-el34/bogner ch1.nam",
+);
+
+pub const mesa_lone_star_default_nam = @embedFile(
+    "models/nam/mesa-boogie-lone-star/FULL-6L6[100w]_MESA!BoogieLoneStar-CH1.nam",
+);
+
 pub const first_pedal_low_nam = @embedFile(
     "models/nam/sp-compressor/SpCompressor_Low.nam",
 );
@@ -57,3 +65,26 @@ pub const skysurfer_hall_medium_ir = @embedFile(
 pub const default_cabinet_ir = @embedFile(
     "irs/orange-2x12-v30/Orange 2x12 V30 SM57 C.wav",
 );
+
+/// Runtime-ready R-121 capture associated with the left Bogner Shiva combo.
+pub const bogner_shiva_cabinet_ir = @embedFile(
+    "irs/bogner-shiva-2x12/Bogner Shiva 212_V30-R121 01-48k-runtime.wav",
+);
+
+/// Native 48 kHz C90 capture associated with the right Mesa Lone Star combo.
+pub const mesa_lone_star_cabinet_ir = @embedFile(
+    "irs/mesa-lone-star-c90/Marshall 4x12 1960A SM57 Karnivore - Mesa Lone Star 1x12 C90 Dyn441.wav",
+);
+
+pub const AmplifierCabinetPair = struct {
+    name: []const u8,
+    nam: []const u8,
+    cabinet_ir: []const u8,
+};
+
+/// Stable left-to-right catalog shared with the three-combo studio layout.
+pub const amplifier_catalog = [_]AmplifierCabinetPair{
+    .{ .name = "Bogner Shiva EL34", .nam = bogner_shiva_default_nam, .cabinet_ir = bogner_shiva_cabinet_ir },
+    .{ .name = "Dumble ODS #102", .nam = default_nam, .cabinet_ir = default_cabinet_ir },
+    .{ .name = "Mesa/Boogie Lone Star", .nam = mesa_lone_star_default_nam, .cabinet_ir = mesa_lone_star_cabinet_ir },
+};
