@@ -75,8 +75,9 @@ that model is introduced.
   strength, and fill radiance belong to one declarative `ViewProfile` in `ui`.
   The Metal backend consumes this profile and does not own product-view tuning.
 - Equipment geometry and shadow geometry share the same vertex stream.
-- The renderer overlays browser, signal-flow, transport, and other screen-space
-  UI after the 3D pass.
+- The production rig view dedicates the complete area between toolbar, slot bar,
+  and transport to the 3D scene. It has no persistent browser or signal-flow
+  panel. Remaining screen-space controls render after the 3D pass.
 - The renderer MUST allocate no geometry during a steady-state frame.
 
 ## Acceptance criteria
@@ -103,3 +104,5 @@ that model is introduced.
 - Pedal faces contain no decorative corner screws.
 - Pedals and controls cast coherent runtime shadows.
 - The rig still navigates to the focused amplifier view.
+- The 3D scene occupies the full content width and the browser and signal-flow
+  panels leave no reserved empty regions.

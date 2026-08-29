@@ -14,7 +14,7 @@ The generated scene exposes hit regions associated with typed semantic actions.
 For the first increment:
 
 - The active 3D amplifier exposes `show_amplifier` through a projected hit region.
-- The amplifier-view back control exposes `show_rig`.
+- Clicking the focused amplifier again returns to the rig camera.
 - Picking returns the action rather than a mesh index or platform view object.
 - `ViewState` owns the current `rig` or `amplifier` projection mode.
 
@@ -31,9 +31,9 @@ The first 3D amplifier focus presents:
   pedals pass behind the camera and cannot occlude the controls or grille.
 - Power, controls, input jack, handle, grille, badge, and assembly details derived
   from the amplifier description.
-- The existing signal-chain overview with the focused amplifier highlighted.
-- An amplifier-oriented catalog browser.
-- An explicit route back to the rig view.
+- A distraction-free, full-width equipment viewport without a persistent
+  catalog browser or signal-chain overview.
+- A direct route back to the rig view by selecting the focused amplifier again.
 
 The reference image informs screen hierarchy only. Robine does not copy its
 branding, artwork, product geometry, or fixed coordinates into equipment data.
@@ -57,10 +57,9 @@ reuse the same action and projection mechanism.
 - Clicking the visible combo amplifier starts a slow camera transition toward its
   front face.
 - The combo remains the same semantic instance and GPU geometry during the move.
-- The selected amplifier is visually identified in the retained signal chain.
-- Clicking the back affordance returns to `rig` view.
+- Clicking the focused amplifier returns to the `rig` camera.
 - Both transitions regenerate geometry without restarting the macOS window.
 - Hit regions derive from projected semantic bounds rather than platform-authored
   coordinates.
 - Platform code contains no equipment-specific navigation logic.
-- A unit test exercises the complete `rig → amplifier → rig` state transition.
+- Unit tests cover amplifier picking from both rig and focused camera poses.
