@@ -39,6 +39,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     platform.addImport("robine", robine);
+    const ui_assets = b.createModule(.{
+        .root_source_file = b.path("resources/ui/assets.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    platform.addImport("ui_assets", ui_assets);
 
     const studio_module = b.createModule(.{
         .root_source_file = b.path("src/hosts/studio/main.zig"),

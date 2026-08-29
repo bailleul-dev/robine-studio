@@ -28,9 +28,9 @@ pub const ViewProfile = struct {
 };
 
 pub const studio_profile = ViewProfile{
-    .camera = .{ -10.8, 6.4, 0 },
-    .target = .{ -17.60, 1.35, 0 },
-    .field_of_view_degrees = 31.0,
+    .camera = .{ -15.0, 10.0, 0 },
+    .target = .{ -17.30, 0.50, 0 },
+    .field_of_view_degrees = 14.0,
     .key_position = .{ 5.5, 10.5, -13.5 },
     .key_size = .{ 2.40, 3.20 },
     .key_intensity = 1_050.0,
@@ -52,9 +52,9 @@ pub const rig_camera = CameraPose{
 };
 
 pub const amplifier_camera = CameraPose{
-    .camera = .{ -17.10, 1.72, 0 },
-    .target = .{ -20.07, 1.53, 0 },
-    .field_of_view_degrees = 54.0,
+    .camera = .{ -14.45, 2.70, 0 },
+    .target = .{ -18.80, 1.35, 0 },
+    .field_of_view_degrees = 50.0,
 };
 
 pub const studio_viewport = struct {
@@ -81,7 +81,7 @@ const legacy_pedal_scale: f32 = 0.022;
 const pedal_detail_scale: f32 = millimetres_to_world / legacy_pedal_scale;
 
 // Reference combo: 620 x 500 x 260 mm, resting on the 56 mm-high floor.
-const combo_center = [3]f32{ 0, 1.53, -5.55 };
+const combo_center = [3]f32{ 0, 1.53, -4.28 };
 const combo_size = [3]f32{ 3.10, 2.50, 1.30 };
 const equipment_offset_x: f32 = -14.52;
 // 65 mm clear space leaves opposing side jacks readable without scattering the
@@ -98,7 +98,7 @@ fn pedalDetail(value: f32) f32 {
 }
 
 pub const Mesh = struct {
-    pub const max_vertices = 100_000;
+    pub const max_vertices = 105_000;
     pub const max_emissive_lights = 16;
 
     vertices: [max_vertices]Vertex = undefined,
@@ -170,7 +170,7 @@ const materials = struct {
     const middle_ridge = Material{ .base_color = .{ 0.075, 0.135, 0.105 }, .roughness = 0.96, .metallic = 0.0, .emissive = 0.055 };
     const valley = Material{ .base_color = .{ 0.055, 0.105, 0.060 }, .roughness = 0.94, .metallic = 0.0, .emissive = 0.025 };
     const sun = Material{ .base_color = .{ 1.0, 0.64, 0.24 }, .roughness = 0.30, .metallic = 0.0, .emissive = 4.0 };
-    const rug_base = Material{ .base_color = .{ 0.185, 0.070, 0.050 }, .roughness = 0.99, .metallic = 0.0 };
+    const rug_base = Material{ .base_color = .{ 0.82, 0.78, 0.70 }, .roughness = 0.96, .metallic = 0.0, .texture_slot = 1.0 };
     const rug_border = Material{ .base_color = .{ 0.42, 0.205, 0.075 }, .roughness = 0.94, .metallic = 0.01 };
     const rug_detail = Material{ .base_color = .{ 0.115, 0.155, 0.115 }, .roughness = 0.98, .metallic = 0.0 };
 };
@@ -441,23 +441,27 @@ fn addStudioRoom(mesh: *Mesh) !void {
 fn addStudioRug(mesh: *Mesh) !void {
     const center = [3]f32{ -15.05, 0.315, 0.15 };
     try addBox(mesh, center, .{ 11.4, 0.055, 12.2 }, materials.rug_base);
-    try addBox(mesh, .{ center[0], center[1] + 0.038, center[2] }, .{ 10.72, 0.026, 11.52 }, materials.rug_border);
-    try addBox(mesh, .{ center[0], center[1] + 0.058, center[2] }, .{ 10.30, 0.022, 11.10 }, materials.rug_base);
-
-    // A restrained asymmetric motif gives the rug depth without competing with
-    // the pedal colors.
-    try addBox(mesh, .{ center[0] - 2.55, center[1] + 0.078, center[2] }, .{ 0.18, 0.018, 9.8 }, materials.rug_detail);
-    try addBox(mesh, .{ center[0] + 2.10, center[1] + 0.078, center[2] }, .{ 0.10, 0.018, 8.6 }, materials.rug_border);
 }
 
 fn addRigFeatureWall(mesh: *Mesh, side_x: f32) !void {
     const wall_x = -side_x;
 
     // A full-height acoustic wall gives the rig a deliberate architectural
-    // home. The center is a calm limestone bay; walnut slats absorb and frame
-    // it without hiding the amplifier silhouette.
+    // home. Horizontal walnut boards calm the center bay while vertical slats
+    // absorb and frame it without hiding the amplifier silhouette.
     try addBox(mesh, .{ wall_x + 0.19, 7.85, 0 }, .{ 0.24, 14.7, 18.6 }, materials.walnut_dark);
-    try addBox(mesh, .{ wall_x + 0.34, 5.75, 0 }, .{ 0.16, 10.5, 6.9 }, materials.limestone);
+    try addBox(mesh, .{ wall_x + 0.31, 5.75, 0 }, .{ 0.14, 10.5, 6.9 }, materials.walnut_dark);
+    const board_count: usize = 16;
+    const board_height: f32 = 0.62;
+    const board_gap: f32 = 0.035;
+    const panel_height = @as(f32, @floatFromInt(board_count)) * board_height +
+        @as(f32, @floatFromInt(board_count - 1)) * board_gap;
+    for (0..board_count) |index| {
+        const y = 5.75 - panel_height * 0.5 + board_height * 0.5 +
+            @as(f32, @floatFromInt(index)) * (board_height + board_gap);
+        const material = if (index % 3 == 1) materials.acoustic_slats else materials.walnut;
+        try addBox(mesh, .{ wall_x + 0.40, y, 0 }, .{ 0.15, board_height, 6.82 }, material);
+    }
 
     const slat_count: usize = 38;
     const span: f32 = 18.0;
@@ -1496,7 +1500,7 @@ fn vertex(position: [3]f32, normal: [3]f32, material: Material) Vertex {
         .position = .{ position[0], position[1], position[2], 1 },
         .normal = .{ normal[0], normal[1], normal[2], 0 },
         .base_color = .{ material.base_color[0], material.base_color[1], material.base_color[2], 1 },
-        .material = .{ material.roughness, material.metallic, material.emissive, 0 },
+        .material = .{ material.roughness, material.metallic, material.emissive, material.texture_slot },
     };
 }
 
@@ -1646,6 +1650,16 @@ test "studio equipment shares a physical world scale" {
     try std.testing.expectApproxEqAbs(@as(f32, 0.610), single_depth, 0.0001);
     try std.testing.expectApproxEqAbs(@as(f32, 620.0 / 70.0), combo_size[0] / single_width, 0.001);
     try std.testing.expectApproxEqAbs(@as(f32, 500.0 / 55.0), combo_size[1] / (demo.rig.pedals[0].enclosure.dimensions.height * millimetres_to_world), 0.001);
+}
+
+test "studio rug selects the generated base-color texture slot" {
+    var mesh = Mesh{};
+    try build(&mesh, &demo.rig, .{});
+    var textured_vertex_count: usize = 0;
+    for (mesh.items()) |item| {
+        if (item.material[3] > 0.5) textured_vertex_count += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 36), textured_vertex_count);
 }
 
 test "focused combo remains clickable for direct return navigation" {

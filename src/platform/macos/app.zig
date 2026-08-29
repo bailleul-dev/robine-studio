@@ -1,4 +1,5 @@
 const std = @import("std");
+const ui_assets = @import("ui_assets");
 const wireframe = @import("robine").ui.wireframe;
 const lighting_lab = @import("robine").ui.lighting_lab;
 const pedalboard_3d = @import("robine").ui.pedalboard_3d;
@@ -129,6 +130,7 @@ const LightingLabRenderState = struct {
     vertex_buffer: Object,
     vertex_count: usize,
     shadow_texture: Object,
+    surface_texture: Object,
 };
 
 const GpuEmissiveLight = extern struct {
@@ -210,7 +212,7 @@ const shader_source =
     \\    float3 world_position;
     \\    float3 normal;
     \\    float3 base_color;
-    \\    float3 material;
+    \\    float4 material;
     \\    float4 shadow_position;
     \\};
     \\
@@ -224,7 +226,7 @@ const shader_source =
     \\    out.world_position = source_vertex.position.xyz;
     \\    out.normal = normalize(source_vertex.normal.xyz);
     \\    out.base_color = source_vertex.base_color.rgb;
-    \\    out.material = source_vertex.material.xyz;
+    \\    out.material = source_vertex.material;
     \\    out.shadow_position = uniforms.light_view_projection * source_vertex.position;
     \\    return out;
     \\}
@@ -288,13 +290,26 @@ const shader_source =
     \\fragment float4 pbr_fragment(
     \\    PbrRasterData in [[stage_in]],
     \\    constant PbrUniforms& uniforms [[buffer(1)]],
-    \\    depth2d<float> shadow_map [[texture(0)]]) {
+    \\    depth2d<float> shadow_map [[texture(0)]],
+    \\    texture2d<float> surface_texture [[texture(1)]]) {
     \\    float3 n = normalize(in.normal);
     \\    float3 v = normalize(uniforms.camera_position.xyz - in.world_position);
     \\    float roughness = clamp(in.material.x, 0.045, 1.0);
     \\    float metallic = clamp(in.material.y, 0.0, 1.0);
     \\    float emissive_strength = max(in.material.z, 0.0);
-    \\    float3 f0 = mix(float3(0.04), in.base_color, metallic);
+    \\    float3 base_color = in.base_color;
+    \\    if (in.material.w > 0.5) {
+    \\        constexpr sampler surface_sampler(coord::normalized, address::clamp_to_edge,
+    \\            filter::linear, mip_filter::linear);
+    \\        float2 rug_uv = float2(
+    \\            (in.world_position.x + 20.75) / 11.40,
+    \\            1.0 - (in.world_position.z + 5.95) / 12.20);
+    \\        float3 texture_color = surface_texture.sample(surface_sampler, rug_uv).rgb;
+    \\        float texture_luma = dot(texture_color, float3(0.299, 0.587, 0.114));
+    \\        float3 stylized_neutral = float3(texture_luma) * float3(1.05, 0.94, 0.82);
+    \\        base_color *= mix(stylized_neutral, texture_color, 0.78);
+    \\    }
+    \\    float3 f0 = mix(float3(0.04), base_color, metallic);
     \\    float3 direct = float3(0.0);
     \\    float visibility = shadow_visibility(in.shadow_position, shadow_map);
     \\    const int sample_count = 9;
@@ -313,7 +328,7 @@ const shader_source =
     \\        float3 fresnel = fresnel_schlick(max(dot(h, v), 0.0), f0);
     \\        float3 specular = distribution * geometry * fresnel /
     \\            max(4.0 * ndotv * ndotl, 0.001);
-    \\        float3 diffuse = (1.0 - fresnel) * (1.0 - metallic) * in.base_color / M_PI_F;
+    \\        float3 diffuse = (1.0 - fresnel) * (1.0 - metallic) * base_color / M_PI_F;
     \\        float edge = 1.0 - abs(t) * 1.35;
     \\        float3 radiance = float3(1.0, 0.78, 0.54) * max(edge, 0.15) * uniforms.light_axis.w /
     \\            (distance_squared * float(sample_count));
@@ -328,7 +343,7 @@ const shader_source =
     \\    float3 fill_fresnel = fresnel_schlick(max(dot(fill_h, v), 0.0), f0);
     \\    float3 fill_specular = fill_distribution * fill_geometry * fill_fresnel /
     \\        max(4.0 * fill_ndotv * fill_ndotl, 0.001);
-    \\    float3 fill_diffuse = (1.0 - fill_fresnel) * (1.0 - metallic) * in.base_color / M_PI_F;
+    \\    float3 fill_diffuse = (1.0 - fill_fresnel) * (1.0 - metallic) * base_color / M_PI_F;
     \\    direct += (fill_diffuse + fill_specular) * uniforms.time_fill.yzw * fill_ndotl;
     \\    float3 indicator_light = float3(0.0);
     \\    for (uint light_index = 0; light_index < min(uniforms.emissive_light_count, 16u); ++light_index) {
@@ -352,7 +367,7 @@ const shader_source =
     \\        float led_geometry = geometry_smith(n, v, led_l, roughness);
     \\        float3 led_specular = led_distribution * led_geometry * led_fresnel /
     \\            max(4.0 * max(dot(n, v), 0.0) * led_ndotl, 0.001);
-    \\        float3 led_diffuse = (1.0 - led_fresnel) * (1.0 - metallic) * in.base_color / M_PI_F;
+    \\        float3 led_diffuse = (1.0 - led_fresnel) * (1.0 - metallic) * base_color / M_PI_F;
     \\        float local_scale = cone_cosine > -0.5 ? 0.42 : 0.055;
     \\        float3 led_radiance = uniforms.emissive_lights[light_index].color_intensity.rgb *
     \\            uniforms.emissive_lights[light_index].color_intensity.w * falloff * local_scale;
@@ -370,7 +385,7 @@ const shader_source =
     \\    float fixed_strip = pow(max(dot(reflection, fixed_strip_direction), 0.0), mix(110.0, 7.0, fixed_strip_roughness));
     \\    environment += float3(0.42, 0.32, 0.22) * fixed_strip * 1.35;
     \\    float3 ambient_fresnel = fresnel_schlick(max(dot(n, v), 0.0), f0);
-    \\    float3 ambient = environment * (ambient_fresnel + in.base_color * (1.0 - metallic) * 0.22) *
+    \\    float3 ambient = environment * (ambient_fresnel + base_color * (1.0 - metallic) * 0.22) *
     \\        uniforms.strip_size_exposure.w;
     \\    float clearcoat_strength = pow(1.0 - roughness, 3.0);
     \\    float clearcoat_fresnel = fresnel_schlick(max(dot(n, v), 0.0), float3(0.04)).r;
@@ -381,7 +396,7 @@ const shader_source =
     \\    float polished_cool = pow(max(dot(reflection, normalize(float3(0.24, 0.91, -0.34))), 0.0), 12.0);
     \\    ambient += (float3(1.0, 0.72, 0.46) * polished_warm +
     \\        float3(0.70, 0.52, 0.34) * polished_cool) * polished_visibility * 0.62;
-    \\    float3 emitted = in.base_color * emissive_strength;
+    \\    float3 emitted = base_color * emissive_strength;
     \\    float3 color = ambient + direct * mix(0.42, 1.0, visibility) + indicator_light + emitted;
     \\    color = aces_tonemap(color * uniforms.strip_size_exposure.z);
     \\    color = pow(color, float3(1.0 / 2.2));
@@ -854,6 +869,7 @@ fn createLightingLabRenderState(device: Object, library: Object, sample_count: u
         .vertex_buffer = vertex_buffer,
         .vertex_count = mesh.items().len,
         .shadow_texture = try createShadowTexture(device),
+        .surface_texture = try createSurfaceTexture(device),
     };
 }
 
@@ -927,6 +943,47 @@ fn createShadowTexture(device: Object) !Object {
     try send1(void, usize, descriptor, "setUsage:", 1 | 4);
     try send1(void, usize, descriptor, "setStorageMode:", 2);
     return send1(Object, Object, device, "newTextureWithDescriptor:", descriptor);
+}
+
+fn createSurfaceTexture(device: Object) !Object {
+    const loader = try send1(
+        Object,
+        Object,
+        try send0(Object, try classNamed("MTKTextureLoader"), "alloc"),
+        "initWithDevice:",
+        device,
+    );
+    defer send0(void, loader, "release") catch {};
+
+    const data = try send2(
+        Object,
+        *const anyopaque,
+        usize,
+        try classNamed("NSData"),
+        "dataWithBytes:length:",
+        @ptrCast(ui_assets.persian_rug_stylized_v1.ptr),
+        ui_assets.persian_rug_stylized_v1.len,
+    );
+    var texture_error: Object = null;
+    const Function = *const fn (Object, Selector, Object, Object, *Object) callconv(.c) Object;
+    const function: Function = @ptrCast(&objc_msgSend);
+    const texture = function(
+        loader,
+        sel_registerName("newTextureWithData:options:error:"),
+        data,
+        null,
+        &texture_error,
+    );
+    if (texture != null) return texture;
+    if (texture_error) |error_object| {
+        const description = send0(Object, error_object, "localizedDescription") catch null;
+        if (description) |description_object| {
+            const message = send0([*:0]const u8, description_object, "UTF8String") catch
+                return error.TextureLoadFailed;
+            std.log.err("Persian rug texture load failed: {s}", .{message});
+        }
+    }
+    return error.TextureLoadFailed;
 }
 
 fn makeDelegateClass() !Object {
@@ -1341,6 +1398,7 @@ fn drawPbrPass(
     try send3(void, *const anyopaque, usize, usize, encoder, "setVertexBytes:length:atIndex:", @ptrCast(uniforms), @sizeOf(PbrUniforms), 1);
     try send3(void, *const anyopaque, usize, usize, encoder, "setFragmentBytes:length:atIndex:", @ptrCast(uniforms), @sizeOf(PbrUniforms), 1);
     try send2(void, Object, usize, encoder, "setFragmentTexture:atIndex:", state.lighting_lab.shadow_texture, 0);
+    try send2(void, Object, usize, encoder, "setFragmentTexture:atIndex:", state.lighting_lab.surface_texture, 1);
     try send3(void, usize, usize, usize, encoder, "drawPrimitives:vertexStart:vertexCount:", 3, 0, vertex_count);
 }
 

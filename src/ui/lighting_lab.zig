@@ -5,6 +5,7 @@ pub const Material = struct {
     roughness: f32,
     metallic: f32,
     emissive: f32 = 0,
+    texture_slot: f32 = 0,
 };
 
 pub const LightingProfile = struct {
@@ -172,7 +173,7 @@ fn vertex(position: [3]f32, normal: [3]f32, material: Material) Vertex {
         .position = .{ position[0], position[1], position[2], 1 },
         .normal = .{ normal[0], normal[1], normal[2], 0 },
         .base_color = .{ material.base_color[0], material.base_color[1], material.base_color[2], 1 },
-        .material = .{ material.roughness, material.metallic, material.emissive, 0 },
+        .material = .{ material.roughness, material.metallic, material.emissive, material.texture_slot },
     };
 }
 

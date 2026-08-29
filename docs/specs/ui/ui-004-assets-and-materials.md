@@ -82,6 +82,14 @@ The compiler:
 Runtime code MUST consume compiled assets in release builds. Source decoding and
 file watching are development features owned by Studio or tools.
 
+The current macOS prototype proves this boundary with one embedded 512 x 512
+base-color texture on the studio rug. A material slot selects the texture while
+world-space projection supplies deterministic coordinates. Runtime PBR still
+owns direct light, local emissive light, shadows, reflections, exposure, and
+progressive ambient occlusion. This prototype path precedes the general asset
+compiler and MUST migrate to its typed manifest rather than becoming a second
+permanent asset system.
+
 ## Stable identity and hot reload
 
 Assets and materials use stable namespaced IDs. Successful recompilation can
@@ -104,3 +112,5 @@ must not leak replaced textures or fonts.
 - Atlas edges show no neighboring-image bleeding at supported scales.
 - Rotating a light changes highlights and cast shadows without changing any
   source asset or base-color texture.
+- A generated base-color texture can be embedded, selected by a material, and
+  shaded by the same runtime lighting path as an untextured material.
