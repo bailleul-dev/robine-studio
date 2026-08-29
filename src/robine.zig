@@ -3,6 +3,7 @@ pub const model = struct {
 };
 
 pub const audio = struct {
+    pub const convolver = @import("audio/convolver.zig");
     pub const nam = @import("audio/nam.zig");
     pub const processor = @import("audio/processor.zig");
     pub const wav = @import("audio/wav.zig");
@@ -15,6 +16,7 @@ pub const ui = struct {
 };
 
 test {
+    _ = audio.convolver;
     _ = audio.nam;
     _ = audio.processor;
     _ = audio.wav;

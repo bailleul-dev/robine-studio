@@ -1,7 +1,13 @@
 /// Deterministic development signal played once when Robine Studio starts.
 pub const input_wav = @embedFile("fixtures/inputs/celestial-guitar-48k-mono.wav");
 
-/// Initial full-quality Dumble capture. There is deliberately no cabinet IR yet.
+/// Initial full-quality Dumble capture.
 pub const default_nam = @embedFile(
     "models/nam/dumble-ods-102-ford-hyper-accuracy-plus/SLAMMIN_DUMBLE_FORD_CLN_MAIN_S.nam",
+);
+
+/// Initial cabinet response. Position C is an opaque pack identifier: the
+/// source archive does not document its physical microphone placement.
+pub const default_cabinet_ir = @embedFile(
+    "irs/orange-2x12-v30/Orange 2x12 V30 SM57 C.wav",
 );

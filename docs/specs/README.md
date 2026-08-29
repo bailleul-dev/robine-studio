@@ -41,6 +41,7 @@ recommended behavior, and optional behavior respectively.
 | [AUD-001](audio/aud-001-audio-integration-boundary.md) | Audio | Draft | Real-time audio subsystem boundary |
 | [AUD-002](audio/aud-002-native-audio-backends.md) | Audio | Draft | Core Audio, ASIO, PipeWire, and ALSA transport contract |
 | [AUD-003](audio/aud-003-development-nam-playback.md) | Audio | Implemented | Portable WAV-to-NAM startup playback through the native output |
+| [AUD-004](audio/aud-004-cabinet-ir-convolution.md) | Audio | Implemented | Complete portable cabinet IR convolution after NAM inference |
 | [HOST-001](hosts/host-001-runtime-hosts.md) | Hosts | Deferred | Studio, standalone, CLAP, and VST3 hosts |
 
 ## Status lifecycle

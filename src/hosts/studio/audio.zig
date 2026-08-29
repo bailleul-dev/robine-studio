@@ -9,8 +9,9 @@ pub const StartupPlayer = struct {
     driver: native_audio.CoreAudioDriver = .{},
     source: robine.audio.wav.Audio,
     model: robine.audio.nam.Model,
+    cabinet: robine.audio.convolver.Convolver,
     opened: ?contract.OpenedSession = null,
-    source_frame: usize = 0,
+    render_frame: usize = 0,
 
     /// Must be called on the final address of StartupPlayer: CoreAudio retains
     /// `self` as its allocation-free callback context.
@@ -19,7 +20,7 @@ pub const StartupPlayer = struct {
         self.allocator = allocator;
         self.driver = .{};
         self.opened = null;
-        self.source_frame = 0;
+        self.render_frame = 0;
 
         self.source = try robine.audio.wav.decode(allocator, assets.input_wav);
         errdefer self.source.deinit(allocator);
@@ -30,6 +31,19 @@ pub const StartupPlayer = struct {
         if (@abs(self.model.sample_rate - @as(f64, @floatFromInt(self.source.sample_rate))) > 0.5) {
             return error.SourceAndNamSampleRatesDiffer;
         }
+
+        var cabinet_ir = try robine.audio.wav.decode(allocator, assets.default_cabinet_ir);
+        defer cabinet_ir.deinit(allocator);
+        if (cabinet_ir.channels != 1) return error.CabinetImpulseMustBeMono;
+        if (cabinet_ir.sample_rate != self.source.sample_rate) {
+            return error.CabinetAndNamSampleRatesDiffer;
+        }
+        self.cabinet = try robine.audio.convolver.Convolver.init(
+            allocator,
+            cabinet_ir.samples,
+            64,
+        );
+        errdefer self.cabinet.deinit();
 
         const opened = try self.driver.driver().open(
             .{
@@ -57,7 +71,7 @@ pub const StartupPlayer = struct {
         self.opened = opened;
         try opened.session.start();
         std.log.info(
-            "Playing development guitar through NAM: {d:.0} Hz, {d} output channels, {d} frames",
+            "Playing development guitar through full NAM and Orange 2x12 V30 / SM57 C: {d:.0} Hz, {d} output channels, {d} frames",
             .{ opened.config.sample_rate, opened.config.output_channels, opened.config.nominal_frames },
         );
     }
@@ -67,6 +81,7 @@ pub const StartupPlayer = struct {
             opened.session.stop();
             opened.session.close();
         }
+        self.cabinet.deinit();
         self.model.deinit();
         self.source.deinit(self.allocator);
         self.* = undefined;
@@ -76,13 +91,18 @@ pub const StartupPlayer = struct {
         const self: *StartupPlayer = @ptrCast(@alignCast(context));
         const output = cycle.output orelse return;
         const source_frames = self.source.frames();
+        const rendered_frames = source_frames + self.cabinet.tailFrames() + self.cabinet.latencyFrames();
 
         for (0..cycle.frames) |frame| {
-            const sample = if (self.source_frame < source_frames) signal: {
-                const dry = self.source.samples[self.source_frame * self.source.channels];
-                self.source_frame += 1;
-                break :signal std.math.clamp(self.model.processSample(dry), -1.0, 1.0);
-            } else 0.0;
+            const amp_output = if (self.render_frame < source_frames)
+                self.model.processSample(self.source.samples[self.render_frame * self.source.channels])
+            else
+                0.0;
+            const sample = if (self.render_frame < rendered_frames)
+                std.math.clamp(self.cabinet.processSample(amp_output), -1.0, 1.0)
+            else
+                0.0;
+            self.render_frame += 1;
 
             for (output.channels) |channel| {
                 writeSample(channel, output.format, frame, sample);
