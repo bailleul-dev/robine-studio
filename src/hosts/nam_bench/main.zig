@@ -86,7 +86,7 @@ pub fn main(init: std.process.Init) !void {
         for (amplifier_block[0..frames]) |sample| {
             const wet = reverb.processSample(sample);
             for (&cabinets, wet) |*cabinet, channel| {
-                const cabinet_sample = cabinet.processSample(sample + (channel - sample) * 0.5) * assets.monitor_output_gain;
+                const cabinet_sample = cabinet.processSample(sample + channel * assets.reverb_return_gain) * assets.monitor_output_gain;
                 checksum += cabinet_sample;
                 peak = @max(peak, @abs(cabinet_sample));
                 clipped_samples += @intFromBool(@abs(cabinet_sample) >= 1.0);

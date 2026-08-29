@@ -1,9 +1,13 @@
 /// Deterministic development signal played once when Robine Studio starts.
 pub const input_wav = @embedFile("fixtures/inputs/celestial-guitar-48k-mono.wav");
 
-/// Fixed monitor headroom for the capture-only development chain. Continuous
-/// output level controls will replace this when live routing is introduced.
-pub const monitor_output_gain: f32 = 0.025;
+/// Final monitor headroom after the cabinet. Continuous output level controls
+/// will replace this fixed safety gain when live routing is introduced.
+pub const monitor_output_gain: f32 = 0.20;
+
+/// The captured reverb impulse is peak-normalized and has a very energetic tail.
+/// Treat it as a parallel effects-loop return, not as a replacement for the dry path.
+pub const reverb_return_gain: f32 = 0.03;
 
 /// Initial full-quality Dumble capture.
 pub const default_nam = @embedFile(

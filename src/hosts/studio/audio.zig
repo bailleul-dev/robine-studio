@@ -431,15 +431,33 @@ fn mixEffectLoop(
     wet_return: f32,
     enabled: bool,
 ) f32 {
-    // The loop is parallel: bypass must always retain the amplifier path.
-    return smoother.process(dry, dry + wet_return * 0.5, enabled);
+    // The effects loop is parallel. The dry path is a unity-gain wire and never
+    // enters the crossfade; bypass only fades the reverb return to silence.
+    const wet = smoother.process(0.0, wet_return * assets.reverb_return_gain, enabled);
+    return dry + wet;
 }
 
 test "reverb bypass always preserves the dry effects-loop path" {
     var smoother = try robine.audio.bypass.Smoother.init(true, 1_000.0, 0.004);
-    var sample: f32 = 0;
-    for (0..4) |_| sample = mixEffectLoop(&smoother, 0.25, 0.80, false);
-    try std.testing.expectApproxEqAbs(@as(f32, 0.25), sample, 0.000001);
+    var sample: f32 = 0.0;
+    for (0..4) |_| {
+        sample = mixEffectLoop(&smoother, 0.25, 100.0, false);
+    }
+    try std.testing.expectEqual(
+        @as(f32, 0.25),
+        sample,
+    );
+    try std.testing.expectEqual(@as(f32, 0.0), smoother.wetMix());
+}
+
+test "reverb transition never crossfades or attenuates the dry path" {
+    var smoother = try robine.audio.bypass.Smoother.init(true, 1_000.0, 0.004);
+    for (0..4) |_| {
+        try std.testing.expectEqual(
+            @as(f32, -0.375),
+            mixEffectLoop(&smoother, -0.375, 0.0, false),
+        );
+    }
     try std.testing.expectEqual(@as(f32, 0.0), smoother.wetMix());
 }
 
