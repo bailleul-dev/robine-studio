@@ -10,6 +10,8 @@ pub const EmissiveLight = struct {
     radius: f32,
     color: [3]f32,
     intensity: f32,
+    direction: [3]f32 = .{ 0, 0, 0 },
+    cone_cosine: f32 = -1.0,
 };
 
 pub const ViewProfile = struct {
@@ -28,12 +30,12 @@ pub const studio_profile = ViewProfile{
     .camera = .{ 0, 12.5, 6.5 },
     .target = .{ 0, 1.35, -2.7 },
     .field_of_view_degrees = 41.0,
-    .key_position = .{ -8.25, 5.15, -3.35 },
-    .key_size = .{ 1.45, 1.85 },
-    .key_intensity = 285.0,
-    .exposure = 1.34,
+    .key_position = .{ -12.85, 5.15, -2.20 },
+    .key_size = .{ 1.20, 1.55 },
+    .key_intensity = 330.0,
+    .exposure = 1.31,
     .environment_strength = 0.72,
-    .fill_radiance = .{ 0.52, 0.78, 1.05 },
+    .fill_radiance = .{ 0.42, 0.36, 0.28 },
 };
 
 pub const CameraPose = struct {
@@ -49,9 +51,9 @@ pub const rig_camera = CameraPose{
 };
 
 pub const amplifier_camera = CameraPose{
-    .camera = .{ 0, 1.85, -0.85 },
+    .camera = .{ 0, 2.45, -0.85 },
     .target = .{ 0, 2.33, -5.55 },
-    .field_of_view_degrees = 52.0,
+    .field_of_view_degrees = 60.0,
 };
 
 pub const studio_viewport = struct {
@@ -115,12 +117,13 @@ const materials = struct {
     const amplifier_panel = Material{ .base_color = .{ 0.39, 0.36, 0.28 }, .roughness = 0.25, .metallic = 0.68 };
     const amplifier_piping = Material{ .base_color = .{ 0.76, 0.65, 0.41 }, .roughness = 0.31, .metallic = 0.38 };
     const amplifier_badge = Material{ .base_color = .{ 0.84, 0.67, 0.30 }, .roughness = 0.20, .metallic = 0.82 };
-    const studio_wall = Material{ .base_color = .{ 0.105, 0.112, 0.105 }, .roughness = 0.91, .metallic = 0.01 };
-    const studio_wall_trim = Material{ .base_color = .{ 0.24, 0.19, 0.125 }, .roughness = 0.54, .metallic = 0.08 };
+    const studio_wall = Material{ .base_color = .{ 0.22, 0.145, 0.082 }, .roughness = 0.94, .metallic = 0.0 };
+    const studio_wall_trim = Material{ .base_color = .{ 0.34, 0.17, 0.055 }, .roughness = 0.64, .metallic = 0.02 };
     const acoustic_panel = Material{ .base_color = .{ 0.025, 0.042, 0.041 }, .roughness = 0.96, .metallic = 0.0 };
     const acoustic_slats = Material{ .base_color = .{ 0.22, 0.095, 0.032 }, .roughness = 0.67, .metallic = 0.01 };
-    const lamp_warm = Material{ .base_color = .{ 1.0, 0.62, 0.25 }, .roughness = 0.18, .metallic = 0.0, .emissive = 5.2 };
-    const lamp_cool = Material{ .base_color = .{ 0.42, 0.72, 1.0 }, .roughness = 0.18, .metallic = 0.0, .emissive = 4.2 };
+    const lamp_warm = Material{ .base_color = .{ 1.0, 0.78, 0.52 }, .roughness = 0.18, .metallic = 0.0, .emissive = 3.6 };
+    const lamp_cool = Material{ .base_color = .{ 0.60, 0.78, 1.0 }, .roughness = 0.18, .metallic = 0.0, .emissive = 3.0 };
+    const sconce_oak = Material{ .base_color = .{ 0.52, 0.245, 0.070 }, .roughness = 0.64, .metallic = 0.01 };
 };
 
 const Axis = enum { x, y, z };
@@ -232,15 +235,40 @@ fn addStudioRoom(mesh: *Mesh) !void {
     try addBox(mesh, .{ -side_x + 0.15, floor_top + 0.18, 0 }, .{ 0.16, 0.34, 17.8 }, materials.studio_wall_trim);
     try addBox(mesh, .{ side_x - 0.15, floor_top + 0.18, 0 }, .{ 0.16, 0.34, 17.8 }, materials.studio_wall_trim);
 
-    try addAcousticPanel(mesh, -8.35, 4.25, back_z + 0.18, 2.75, 4.30);
-    try addAcousticPanel(mesh, 8.35, 4.25, back_z + 0.18, 2.75, 4.30);
-    try addAcousticPanel(mesh, -11.70, 4.75, back_z + 0.18, 1.60, 3.20);
-    try addAcousticPanel(mesh, 11.70, 4.75, back_z + 0.18, 1.60, 3.20);
+    try addWoodWallSconce(mesh, .{ -5.65, 5.05, back_z + 0.26 });
+    try addWoodWallSconce(mesh, .{ 5.65, 5.05, back_z + 0.26 });
+    try addSideWoodSconce(mesh, .{ -side_x + 0.26, 5.10, -2.20 }, true);
+    try addSideWoodSconce(mesh, .{ side_x - 0.26, 5.10, -2.20 }, false);
+}
 
-    try addStandingStudioLamp(mesh, .{ -8.25, floor_top, -3.55 }, true);
-    try addStandingStudioLamp(mesh, .{ 8.25, floor_top, -3.55 }, false);
-    try addWallSconce(mesh, .{ -4.90, 6.20, back_z + 0.19 });
-    try addWallSconce(mesh, .{ 4.90, 6.20, back_z + 0.19 });
+fn addWoodWallSconce(mesh: *Mesh, center: [3]f32) !void {
+    try addBeveledBox(mesh, center, .{ 1.62, 1.62, 0.38 }, 0.075, materials.sconce_oak);
+    try addBox(mesh, .{ center[0], center[1] + 0.84, center[2] + 0.08 }, .{ 1.30, 0.10, 0.28 }, materials.lamp_warm);
+    try addBox(mesh, .{ center[0], center[1] - 0.84, center[2] + 0.08 }, .{ 1.30, 0.10, 0.28 }, materials.lamp_warm);
+    try mesh.addEmissiveLight(.{
+        .position = .{ center[0], center[1] + 0.98, center[2] + 0.48 },
+        .radius = 5.2,
+        .color = .{ 1.0, 0.68, 0.36 },
+        .intensity = 2.4,
+        .direction = .{ 0, 0.80, -0.60 },
+        .cone_cosine = 0.70,
+    });
+    try mesh.addEmissiveLight(.{
+        .position = .{ center[0], center[1] - 0.98, center[2] + 0.48 },
+        .radius = 4.7,
+        .color = .{ 1.0, 0.62, 0.30 },
+        .intensity = 2.0,
+        .direction = .{ 0, -0.80, -0.60 },
+        .cone_cosine = 0.70,
+    });
+}
+
+fn addSideWoodSconce(mesh: *Mesh, center: [3]f32, left: bool) !void {
+    const direction = if (left) [3]f32{ 1, 0, 0 } else [3]f32{ -1, 0, 0 };
+    const perpendicular = [3]f32{ 0, 0, 1 };
+    try addOrientedBox(mesh, center, direction, perpendicular, 0.81, 0.19, 1.62, materials.sconce_oak);
+    try addOrientedBox(mesh, .{ center[0], center[1] + 0.84, center[2] }, direction, perpendicular, 0.65, 0.22, 0.10, materials.lamp_warm);
+    try addOrientedBox(mesh, .{ center[0], center[1] - 0.84, center[2] }, direction, perpendicular, 0.65, 0.22, 0.10, materials.lamp_warm);
 }
 
 fn addAcousticPanel(mesh: *Mesh, x: f32, y: f32, z: f32, width: f32, height: f32) !void {
@@ -277,8 +305,8 @@ fn addStandingStudioLamp(mesh: *Mesh, base: [3]f32, warm: bool) !void {
     try mesh.addEmissiveLight(.{
         .position = .{ base[0], head_y, base[2] + 0.55 },
         .radius = 8.5,
-        .color = if (warm) .{ 1.0, 0.55, 0.20 } else .{ 0.32, 0.64, 1.0 },
-        .intensity = if (warm) 3.6 else 3.0,
+        .color = if (warm) .{ 1.0, 0.72, 0.46 } else .{ 0.55, 0.72, 1.0 },
+        .intensity = if (warm) 2.2 else 1.8,
     });
 }
 
@@ -290,8 +318,8 @@ fn addWallSconce(mesh: *Mesh, center: [3]f32) !void {
     try mesh.addEmissiveLight(.{
         .position = .{ center[0], center[1] - 0.88, center[2] + 0.58 },
         .radius = 6.0,
-        .color = .{ 1.0, 0.48, 0.16 },
-        .intensity = 2.4,
+        .color = .{ 1.0, 0.66, 0.36 },
+        .intensity = 1.6,
     });
 }
 
