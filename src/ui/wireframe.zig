@@ -338,18 +338,18 @@ fn layoutPedalBounds(bounds: Bounds, rig: *const demo.Rig) ![8]Bounds {
     const gap: f32 = 0.026;
     const margin: f32 = 0.025;
     const available = bounds.width - margin * 2.0 - gap * @as(f32, @floatFromInt(pedals.len - 1));
-    var cursor = bounds.left + margin;
+    var cursor = bounds.right() - margin;
     var result: [8]Bounds = undefined;
     for (pedals, 0..) |_, index| {
         const width = available * weights[index] / total_weight;
         const pedal_bounds = Bounds{
-            .left = cursor,
+            .left = cursor - width,
             .bottom = bounds.bottom + 0.115,
             .width = width,
             .height = bounds.height - 0.22,
         };
         result[index] = pedal_bounds;
-        cursor += width + gap;
+        cursor -= width + gap;
     }
     return result;
 }
@@ -560,14 +560,14 @@ fn endpointPosition(endpoint: demo.Endpoint, board: Bounds, pedals: []const Boun
     return switch (endpoint) {
         .rig_input => blk: {
             const first_input = try projectPedalPort(pedals[0], rig.pedals[0], .input);
-            break :blk .{ board.left + 0.008, first_input.cable_anchor[1] };
+            break :blk .{ board.right() - 0.008, first_input.cable_anchor[1] };
         },
         .pedal_input => |index| (try projectPedalPort(pedals[index], rig.pedals[index], .input)).cable_anchor,
         .pedal_output => |index| (try projectPedalPort(pedals[index], rig.pedals[index], .output)).cable_anchor,
         .amplifier_input => blk: {
             const last_index = rig.pedals.len - 1;
             const last_output = try projectPedalPort(pedals[last_index], rig.pedals[last_index], .output);
-            break :blk .{ board.right() - 0.008, last_output.cable_anchor[1] };
+            break :blk .{ board.left + 0.008, last_output.cable_anchor[1] };
         },
     };
 }

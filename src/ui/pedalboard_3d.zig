@@ -70,14 +70,14 @@ pub fn build(mesh: *Mesh, rig: *const demo.Rig) !void {
     var total_width: f32 = gap * @as(f32, @floatFromInt(rig.pedals.len - 1));
     for (rig.pedals) |pedal| total_width += pedal.enclosure.dimensions.width * millimetres_to_world;
 
-    var cursor = -total_width * 0.5;
+    var cursor = total_width * 0.5;
     for (rig.pedals) |pedal| {
         const width = pedal.enclosure.dimensions.width * millimetres_to_world;
         const depth = pedal.enclosure.dimensions.depth * millimetres_to_world;
         const height = pedal.enclosure.dimensions.height * millimetres_to_world;
-        const center_x = cursor + width * 0.5;
+        const center_x = cursor - width * 0.5;
         try addPedal(mesh, pedal, .{ center_x, 0.24, 0 }, .{ width, height, depth });
-        cursor += width + gap;
+        cursor -= width + gap;
     }
 }
 

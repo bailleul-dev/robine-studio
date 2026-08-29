@@ -161,13 +161,13 @@ const drive_controls = [_]Control{
 };
 
 const side_ports = [_]PedalPort{
-    .{ .id = "audio.input", .role = .input, .surface = .left_side, .slot = .start },
-    .{ .id = "audio.output", .role = .output, .surface = .right_side, .slot = .start },
+    .{ .id = "audio.input", .role = .input, .surface = .right_side, .slot = .start },
+    .{ .id = "audio.output", .role = .output, .surface = .left_side, .slot = .start },
 };
 
 const top_ports = [_]PedalPort{
-    .{ .id = "audio.input", .role = .input, .surface = .top, .slot = .start },
-    .{ .id = "audio.output", .role = .output, .surface = .top, .slot = .end },
+    .{ .id = "audio.input", .role = .input, .surface = .top, .slot = .end },
+    .{ .id = "audio.output", .role = .output, .surface = .top, .slot = .start },
 };
 
 const pedals = [_]Pedal{
@@ -238,8 +238,11 @@ test "demo rig is connected semantically" {
     try std.testing.expectEqual(Presentation.closed, rig.pedals[1].presentation);
     try std.testing.expectEqual(PedalFormFactor.double, rig.pedals[3].enclosure.form_factor);
     try std.testing.expectEqual(@as(f32, 2), rig.pedals[3].enclosure.footprint_units);
-    try std.testing.expectEqual(JackSurface.left_side, rig.pedals[0].ports[0].surface);
+    try std.testing.expectEqual(JackSurface.right_side, rig.pedals[0].ports[0].surface);
+    try std.testing.expectEqual(JackSurface.left_side, rig.pedals[0].ports[1].surface);
     try std.testing.expectEqual(JackSurface.top, rig.pedals[1].ports[0].surface);
+    try std.testing.expectEqual(SurfaceSlot.end, rig.pedals[1].ports[0].slot);
+    try std.testing.expectEqual(SurfaceSlot.start, rig.pedals[1].ports[1].slot);
     try std.testing.expectEqual(PortRole.output, rig.pedals[3].ports[1].role);
     try std.testing.expectEqual(@as(u8, 2), rig.cabinet.speaker_count);
 }
