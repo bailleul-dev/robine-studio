@@ -29,7 +29,7 @@ pub const ViewProfile = struct {
 
 pub const studio_profile = ViewProfile{
     .camera = .{ -10.8, 6.4, 0 },
-    .target = .{ -15.15, 0.65, 0 },
+    .target = .{ -17.20, 1.20, 0 },
     .field_of_view_degrees = 31.0,
     .key_position = .{ 5.5, 10.5, -13.5 },
     .key_size = .{ 2.40, 3.20 },
@@ -87,9 +87,11 @@ const equipment_offset_x: f32 = -14.52;
 // 65 mm clear space leaves opposing side jacks readable without scattering the
 // input chain across the room.
 const pedal_gap: f32 = 0.325;
-// The effects-loop row sits 180 mm behind the input chain, leaving roughly
-// 60 mm between enclosure edges.
-const effects_loop_row_depth: f32 = -0.90;
+// The whole board sits close to the amplifier while retaining two readable
+// rows. The effects-loop row remains 180 mm behind the input chain, leaving
+// roughly 60 mm between enclosure edges.
+const input_row_depth: f32 = -2.0;
+const effects_loop_row_depth: f32 = input_row_depth - 0.90;
 
 fn pedalDetail(value: f32) f32 {
     return value * pedal_detail_scale;
@@ -312,7 +314,7 @@ fn pedalPlacement(rig: *const demo.Rig, pedal_index: usize) ?PedalPlacement {
         };
         const center_x = cursor - size[0] * 0.5;
         const row_depth: f32 = switch (signal_stage) {
-            .before_amplifier => 0,
+            .before_amplifier => input_row_depth,
             .effects_loop => effects_loop_row_depth,
         };
         if (index == pedal_index) return .{ .base = .{ center_x, 0.37, row_depth }, .size = size };
