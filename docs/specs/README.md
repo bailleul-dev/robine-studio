@@ -1,0 +1,41 @@
+# Robine Amp specifications
+
+This directory contains the normative product and engineering specifications for
+Robine Amp.
+
+Specifications are grouped by domain and named using:
+
+```text
+docs/specs/<domain>/<feature-id>-<feature-name>.md
+```
+
+Feature identifiers are stable. Renaming a specification must not change its
+identifier, and identifiers from removed specifications must not be reused.
+
+The words **MUST**, **SHOULD**, and **MAY** describe mandatory requirements,
+recommended behavior, and optional behavior respectively.
+
+## Specification index
+
+| Feature | Domain | Status | Description |
+| --- | --- | --- | --- |
+| [ARC-001](architecture/arc-001-system-architecture.md) | Architecture | Draft | Model-driven system boundaries and dependency rules |
+| [CORE-001](core/core-001-parameter-and-state-model.md) | Core | Draft | Shared parameter, gesture, automation, and state model |
+| [MOD-001](model/mod-001-equipment-description.md) | Model | Draft | Semantic descriptions of pedals, amplifiers, cabinets, and rigs |
+| [MOD-002](model/mod-002-assembly-and-spatial-relations.md) | Model | Draft | Mechanical assembly, placement constraints, articulation, and views |
+| [MOD-003](model/mod-003-connectivity-and-wiring.md) | Model | Draft | Internal electronics, external cabling, and typed connectivity graphs |
+| [UI-001](ui/ui-001-scene-composition.md) | UI | Draft | Equipment-to-scene projection and visual composition |
+| [UI-002](ui/ui-002-rendering-pipeline.md) | UI | Draft | Hybrid 3D equipment and 2D overlay rendering pipeline |
+| [UI-003](ui/ui-003-controls-and-interaction.md) | UI | Draft | Semantic equipment actions and parameter gestures |
+| [UI-004](ui/ui-004-assets-and-materials.md) | UI | Draft | Asset compilation and procedural material system |
+| [STU-001](studio/stu-001-rendering-engine-mvp.md) | Studio | Draft | No-audio equipment-modeling and rendering MVP |
+| [AUD-001](audio/aud-001-audio-integration-boundary.md) | Audio | Deferred | Real-time audio subsystem boundary |
+| [HOST-001](hosts/host-001-runtime-hosts.md) | Hosts | Deferred | Studio, standalone, CLAP, and VST3 hosts |
+
+## Status lifecycle
+
+- **Draft**: open to structural changes.
+- **Accepted**: approved for implementation.
+- **Implemented**: acceptance criteria are verified.
+- **Deferred**: intentionally outside the active milestone.
+- **Superseded**: replaced by another identified specification.
