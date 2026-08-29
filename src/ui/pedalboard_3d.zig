@@ -28,15 +28,15 @@ pub const ViewProfile = struct {
 };
 
 pub const studio_profile = ViewProfile{
-    .camera = .{ 0, 12.5, 6.5 },
-    .target = .{ 0, 1.35, -2.7 },
-    .field_of_view_degrees = 41.0,
-    .key_position = .{ -9.0, 6.0, -1.0 },
+    .camera = .{ 0, 9.8, 9.2 },
+    .target = .{ 0, 2.6, -7.5 },
+    .field_of_view_degrees = 53.0,
+    .key_position = .{ -10.5, 8.8, -7.0 },
     .key_size = .{ 1.20, 1.55 },
-    .key_intensity = 220.0,
-    .exposure = 1.31,
-    .environment_strength = 0.72,
-    .fill_radiance = .{ 0.42, 0.36, 0.28 },
+    .key_intensity = 250.0,
+    .exposure = 1.24,
+    .environment_strength = 0.86,
+    .fill_radiance = .{ 0.36, 0.39, 0.36 },
 };
 
 pub const CameraPose = struct {
@@ -139,6 +139,13 @@ const materials = struct {
     const lamp_warm = Material{ .base_color = .{ 1.0, 0.78, 0.52 }, .roughness = 0.18, .metallic = 0.0, .emissive = 3.6 };
     const lamp_cool = Material{ .base_color = .{ 0.60, 0.78, 1.0 }, .roughness = 0.18, .metallic = 0.0, .emissive = 3.0 };
     const sconce_oak = Material{ .base_color = .{ 0.52, 0.245, 0.070 }, .roughness = 0.64, .metallic = 0.01 };
+    const window_frame = Material{ .base_color = .{ 0.020, 0.025, 0.024 }, .roughness = 0.24, .metallic = 0.72 };
+    const sky = Material{ .base_color = .{ 0.30, 0.46, 0.55 }, .roughness = 1.0, .metallic = 0.0, .emissive = 0.72 };
+    const horizon = Material{ .base_color = .{ 0.58, 0.47, 0.32 }, .roughness = 1.0, .metallic = 0.0, .emissive = 0.24 };
+    const distant_ridge = Material{ .base_color = .{ 0.105, 0.165, 0.165 }, .roughness = 0.98, .metallic = 0.0, .emissive = 0.10 };
+    const middle_ridge = Material{ .base_color = .{ 0.075, 0.135, 0.105 }, .roughness = 0.96, .metallic = 0.0, .emissive = 0.055 };
+    const valley = Material{ .base_color = .{ 0.055, 0.105, 0.060 }, .roughness = 0.94, .metallic = 0.0, .emissive = 0.025 };
+    const sun = Material{ .base_color = .{ 1.0, 0.64, 0.24 }, .roughness = 0.30, .metallic = 0.0, .emissive = 4.0 };
 };
 
 const Axis = enum { x, y, z };
@@ -336,12 +343,20 @@ fn addPedalboard(mesh: *Mesh) !void {
 
 fn addStudioRoom(mesh: *Mesh) !void {
     const floor_top: f32 = 0.28;
-    const wall_height: f32 = 8.7;
+    const wall_height: f32 = 12.0;
     const back_z: f32 = -8.92;
     const side_x: f32 = 13.46;
     const wall_center_y = floor_top + wall_height * 0.5;
 
-    try addBox(mesh, .{ 0, wall_center_y, back_z }, .{ 27.15, wall_height, 0.24 }, materials.studio_wall);
+    // The rear wall is architectural geometry around a broad overlook, not a
+    // textured photograph pasted onto the room.
+    const window_bottom: f32 = 1.05;
+    const window_top: f32 = 7.75;
+    const window_half_width: f32 = 11.15;
+    try addBox(mesh, .{ -12.16, wall_center_y, back_z }, .{ 2.83, wall_height, 0.24 }, materials.studio_wall);
+    try addBox(mesh, .{ 12.16, wall_center_y, back_z }, .{ 2.83, wall_height, 0.24 }, materials.studio_wall);
+    try addBox(mesh, .{ 0, floor_top + (window_bottom - floor_top) * 0.5, back_z }, .{ window_half_width * 2.0, window_bottom - floor_top, 0.24 }, materials.studio_wall);
+    try addBox(mesh, .{ 0, window_top + (floor_top + wall_height - window_top) * 0.5, back_z }, .{ window_half_width * 2.0, floor_top + wall_height - window_top, 0.24 }, materials.studio_wall);
     try addBox(mesh, .{ -side_x, wall_center_y, 0 }, .{ 0.24, wall_height, 18.0 }, materials.studio_wall);
     try addBox(mesh, .{ side_x, wall_center_y, 0 }, .{ 0.24, wall_height, 18.0 }, materials.studio_wall);
 
@@ -349,8 +364,69 @@ fn addStudioRoom(mesh: *Mesh) !void {
     try addBox(mesh, .{ -side_x + 0.15, floor_top + 0.18, 0 }, .{ 0.16, 0.34, 17.8 }, materials.studio_wall_trim);
     try addBox(mesh, .{ side_x - 0.15, floor_top + 0.18, 0 }, .{ 0.16, 0.34, 17.8 }, materials.studio_wall_trim);
 
-    try addWoodWallSconce(mesh, .{ -5.65, 2.00, back_z + 0.26 });
-    try addWoodWallSconce(mesh, .{ 5.65, 2.00, back_z + 0.26 });
+    try addWindowWall(mesh, back_z, window_bottom, window_top, window_half_width);
+    try addOverlookLandscape(mesh, back_z);
+
+    // Keep the familiar warm sconces on the solid outer piers.
+    try addWoodWallSconce(mesh, .{ -12.08, 2.15, back_z + 0.26 });
+    try addWoodWallSconce(mesh, .{ 12.08, 2.15, back_z + 0.26 });
+}
+
+fn addWindowWall(mesh: *Mesh, back_z: f32, bottom: f32, top: f32, half_width: f32) !void {
+    const front_z = back_z + 0.18;
+    const frame_depth: f32 = 0.28;
+    const frame_width: f32 = 0.18;
+    const height = top - bottom;
+    try addBox(mesh, .{ 0, bottom, front_z }, .{ half_width * 2.0, frame_width, frame_depth }, materials.window_frame);
+    try addBox(mesh, .{ 0, top, front_z }, .{ half_width * 2.0, frame_width, frame_depth }, materials.window_frame);
+    try addBox(mesh, .{ -half_width, bottom + height * 0.5, front_z }, .{ frame_width, height, frame_depth }, materials.window_frame);
+    try addBox(mesh, .{ half_width, bottom + height * 0.5, front_z }, .{ frame_width, height, frame_depth }, materials.window_frame);
+    for (1..6) |index| {
+        const x = -half_width + @as(f32, @floatFromInt(index)) * half_width * 2.0 / 6.0;
+        try addBox(mesh, .{ x, bottom + height * 0.5, front_z }, .{ 0.12, height, frame_depth }, materials.window_frame);
+    }
+    try addBox(mesh, .{ 0, bottom - 0.04, front_z + 0.18 }, .{ half_width * 2.0 + 0.42, 0.24, 0.62 }, materials.studio_wall_trim);
+}
+
+fn addOverlookLandscape(mesh: *Mesh, back_z: f32) !void {
+    // The view is assembled from a luminous sky and independent terrain
+    // layers. Its silhouette intentionally does not reproduce the reference.
+    try addBox(mesh, .{ 0, 7.7, back_z - 20.0 }, .{ 60.0, 15.0, 0.18 }, materials.sky);
+    try addBox(mesh, .{ 0, 2.15, back_z - 19.8 }, .{ 60.0, 1.8, 0.20 }, materials.horizon);
+    try addBox(mesh, .{ 0, 0.04, back_z - 9.8 }, .{ 60.0, 0.18, 20.0 }, materials.valley);
+    try addCylinder(mesh, .{ -7.4, 5.85, back_z - 19.65 }, 0.58, 0.16, materials.sun, .z);
+
+    const distant = [_]f32{ 2.10, 2.75, 2.42, 3.25, 2.62, 3.72, 2.85, 3.48, 2.56, 3.05, 2.35, 2.78, 2.05 };
+    const middle = [_]f32{ 1.15, 1.58, 1.30, 2.05, 1.48, 2.28, 1.62, 2.12, 1.42, 1.90, 1.22, 1.55, 1.08 };
+    try addLandscapeRidge(mesh, back_z - 14.5, 0.12, 28.0, &distant, materials.distant_ridge);
+    try addLandscapeRidge(mesh, back_z - 8.0, 0.10, 27.0, &middle, materials.middle_ridge);
+}
+
+fn addLandscapeRidge(
+    mesh: *Mesh,
+    z: f32,
+    base_y: f32,
+    half_width: f32,
+    heights: []const f32,
+    material: Material,
+) !void {
+    if (heights.len < 2) return;
+    const normal = [3]f32{ 0, 0, 1 };
+    for (0..heights.len - 1) |index| {
+        const divisor = @as(f32, @floatFromInt(heights.len - 1));
+        const x0 = -half_width + @as(f32, @floatFromInt(index)) * half_width * 2.0 / divisor;
+        const x1 = -half_width + @as(f32, @floatFromInt(index + 1)) * half_width * 2.0 / divisor;
+        try mesh.triangle(
+            vertex(.{ x0, base_y, z }, normal, material),
+            vertex(.{ x1, base_y, z }, normal, material),
+            vertex(.{ x1, heights[index + 1], z }, normal, material),
+        );
+        try mesh.triangle(
+            vertex(.{ x0, base_y, z }, normal, material),
+            vertex(.{ x1, heights[index + 1], z }, normal, material),
+            vertex(.{ x0, heights[index], z }, normal, material),
+        );
+    }
 }
 
 fn addWoodWallSconce(mesh: *Mesh, center: [3]f32) !void {
