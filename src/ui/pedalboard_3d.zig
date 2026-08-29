@@ -5,6 +5,13 @@ const lighting = @import("lighting_lab.zig");
 pub const Vertex = lighting.Vertex;
 pub const Material = lighting.Material;
 
+pub const EmissiveLight = struct {
+    position: [3]f32,
+    radius: f32,
+    color: [3]f32,
+    intensity: f32,
+};
+
 pub const ViewProfile = struct {
     camera: [3]f32,
     target: [3]f32,
@@ -29,12 +36,19 @@ pub const studio_profile = ViewProfile{
 
 pub const Mesh = struct {
     pub const max_vertices = 64_000;
+    pub const max_emissive_lights = 16;
 
     vertices: [max_vertices]Vertex = undefined,
     len: usize = 0,
+    emissive_lights: [max_emissive_lights]EmissiveLight = undefined,
+    emissive_light_len: usize = 0,
 
     pub fn items(self: *const Mesh) []const Vertex {
         return self.vertices[0..self.len];
+    }
+
+    pub fn emissiveLights(self: *const Mesh) []const EmissiveLight {
+        return self.emissive_lights[0..self.emissive_light_len];
     }
 
     fn triangle(self: *Mesh, a: Vertex, b: Vertex, c: Vertex) !void {
@@ -43,6 +57,12 @@ pub const Mesh = struct {
         self.vertices[self.len + 1] = b;
         self.vertices[self.len + 2] = c;
         self.len += 3;
+    }
+
+    fn addEmissiveLight(self: *Mesh, light: EmissiveLight) !void {
+        if (self.emissive_light_len >= self.emissive_lights.len) return error.TooManyEmissiveLights;
+        self.emissive_lights[self.emissive_light_len] = light;
+        self.emissive_light_len += 1;
     }
 };
 
@@ -55,7 +75,6 @@ const materials = struct {
     const chrome = Material{ .base_color = .{ 0.48, 0.52, 0.50 }, .roughness = 0.14, .metallic = 1.0 };
     const rubber = Material{ .base_color = .{ 0.012, 0.015, 0.014 }, .roughness = 0.78, .metallic = 0.0 };
     const pcb = Material{ .base_color = .{ 0.025, 0.19, 0.105 }, .roughness = 0.38, .metallic = 0.08 };
-    const led = Material{ .base_color = .{ 0.16, 0.95, 0.42 }, .roughness = 0.16, .metallic = 0.12 };
     const pointer = Material{ .base_color = .{ 0.95, 0.67, 0.18 }, .roughness = 0.28, .metallic = 0.30 };
 };
 
@@ -181,13 +200,23 @@ fn addControls(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void
 
 fn addFootswitches(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void {
     const count = @max(@as(usize, 1), @as(usize, pedal.footswitch_count));
+    const brightness = std.math.clamp(pedal.indicator_brightness, 0, 1);
     for (0..count) |index| {
         const x = base[0] + size[0] * ((@as(f32, @floatFromInt(index)) + 1.0) / @as(f32, @floatFromInt(count + 1)) - 0.5) * 0.72;
         const z = base[2] + size[2] * 0.29;
         const top = base[1] + size[1];
+        const led_z = z - size[2] * 0.16;
         try addCylinder(mesh, .{ x, top + 0.09, z }, 0.18, 0.16, materials.chrome, .y);
         try addCylinder(mesh, .{ x, top + 0.19, z }, 0.125, 0.12, materials.rubber, .y);
-        try addCylinder(mesh, .{ x, top + 0.055, z - size[2] * 0.16 }, 0.055, 0.08, materials.led, .y);
+        try addCylinder(mesh, .{ x, top + 0.035, led_z }, 0.082, 0.050, materials.chrome, .y);
+        try addCylinder(mesh, .{ x, top + 0.078, led_z }, 0.070, 0.080, ledLensMaterial(brightness), .y);
+        try addCylinder(mesh, .{ x, top + 0.126, led_z }, 0.018, 0.024, ledCoreMaterial(brightness), .y);
+        try mesh.addEmissiveLight(.{
+            .position = .{ x, top + 0.16, led_z },
+            .radius = 0.62,
+            .color = .{ 0.012, 1.0, 0.075 },
+            .intensity = 1.55 * brightness,
+        });
     }
 }
 
@@ -427,7 +456,25 @@ fn vertex(position: [3]f32, normal: [3]f32, material: Material) Vertex {
         .position = .{ position[0], position[1], position[2], 1 },
         .normal = .{ normal[0], normal[1], normal[2], 0 },
         .base_color = .{ material.base_color[0], material.base_color[1], material.base_color[2], 1 },
-        .material = .{ material.roughness, material.metallic, 0, 0 },
+        .material = .{ material.roughness, material.metallic, material.emissive, 0 },
+    };
+}
+
+fn ledLensMaterial(brightness: f32) Material {
+    return .{
+        .base_color = .{ 0.004, 0.78, 0.025 },
+        .roughness = 0.09,
+        .metallic = 0.02,
+        .emissive = 1.8 * brightness,
+    };
+}
+
+fn ledCoreMaterial(brightness: f32) Material {
+    return .{
+        .base_color = .{ 0.012, 1.0, 0.055 },
+        .roughness = 0.05,
+        .metallic = 0,
+        .emissive = 4.6 * brightness,
     };
 }
 
@@ -463,12 +510,18 @@ test "semantic pedalboard produces bounded 3D geometry" {
     try build(&mesh, &demo.rig);
     try std.testing.expect(mesh.len > 30_000);
     try std.testing.expect(mesh.len < Mesh.max_vertices);
+    try std.testing.expectEqual(@as(usize, 7), mesh.emissiveLights().len);
     try std.testing.expectEqual(@as(usize, 0), mesh.len % 3);
     for (mesh.items()) |item| {
         for (item.position) |value| try std.testing.expect(std.math.isFinite(value));
         for (item.normal) |value| try std.testing.expect(std.math.isFinite(value));
         try std.testing.expect(item.material[0] >= 0.04 and item.material[0] <= 1.0);
         try std.testing.expect(item.material[1] >= 0 and item.material[1] <= 1.0);
+        try std.testing.expect(item.material[2] >= 0 and item.material[2] <= 16.0);
+    }
+    for (mesh.emissiveLights()) |light| {
+        try std.testing.expect(light.radius > 0 and light.radius <= 1.0);
+        try std.testing.expect(light.intensity > 0 and light.intensity <= 4.0);
     }
 }
 

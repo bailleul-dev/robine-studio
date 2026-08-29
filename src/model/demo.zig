@@ -91,6 +91,7 @@ pub const Pedal = struct {
     presentation: Presentation = .closed,
     accent: Accent,
     footswitch_count: u8 = 1,
+    indicator_brightness: f32 = 1.0,
 };
 
 pub const Amplifier = struct {
@@ -186,6 +187,7 @@ const pedals = [_]Pedal{
         .ports = &top_ports,
         .enclosure = enclosures.single,
         .accent = .coral,
+        .indicator_brightness = 0.82,
     },
     .{
         .role = "phaser",
@@ -194,6 +196,7 @@ const pedals = [_]Pedal{
         .ports = &side_ports,
         .enclosure = enclosures.single,
         .accent = .amber,
+        .indicator_brightness = 0.72,
     },
     .{
         .role = "modulation",
@@ -203,6 +206,7 @@ const pedals = [_]Pedal{
         .enclosure = enclosures.double,
         .accent = .green,
         .footswitch_count = 2,
+        .indicator_brightness = 0.90,
     },
     .{
         .role = "overdrive",
@@ -212,6 +216,7 @@ const pedals = [_]Pedal{
         .enclosure = enclosures.single,
         .accent = .violet,
         .footswitch_count = 2,
+        .indicator_brightness = 1.0,
     },
 };
 
@@ -245,4 +250,7 @@ test "demo rig is connected semantically" {
     try std.testing.expectEqual(SurfaceSlot.start, rig.pedals[1].ports[1].slot);
     try std.testing.expectEqual(PortRole.output, rig.pedals[3].ports[1].role);
     try std.testing.expectEqual(@as(u8, 2), rig.cabinet.speaker_count);
+    for (rig.pedals) |pedal| {
+        try std.testing.expect(pedal.indicator_brightness >= 0 and pedal.indicator_brightness <= 1);
+    }
 }

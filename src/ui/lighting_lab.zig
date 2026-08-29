@@ -4,6 +4,7 @@ pub const Material = struct {
     base_color: [3]f32,
     roughness: f32,
     metallic: f32,
+    emissive: f32 = 0,
 };
 
 pub const LightingProfile = struct {
@@ -171,7 +172,7 @@ fn vertex(position: [3]f32, normal: [3]f32, material: Material) Vertex {
         .position = .{ position[0], position[1], position[2], 1 },
         .normal = .{ normal[0], normal[1], normal[2], 0 },
         .base_color = .{ material.base_color[0], material.base_color[1], material.base_color[2], 1 },
-        .material = .{ material.roughness, material.metallic, 0, 0 },
+        .material = .{ material.roughness, material.metallic, material.emissive, 0 },
     };
 }
 
@@ -185,5 +186,6 @@ test "lighting lab geometry is finite and material bounded" {
         for (item.normal) |value| try std.testing.expect(std.math.isFinite(value));
         try std.testing.expect(item.material[0] >= 0.04 and item.material[0] <= 1.0);
         try std.testing.expect(item.material[1] >= 0 and item.material[1] <= 1.0);
+        try std.testing.expect(item.material[2] >= 0 and item.material[2] <= 16.0);
     }
 }

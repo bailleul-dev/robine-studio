@@ -42,6 +42,7 @@ pub const Options = struct {
     line_vertices: []const wireframe.Vertex,
     fill_vertices: []const wireframe.Vertex,
     equipment_vertices: []const lighting_lab.Vertex = &.{},
+    equipment_lights: []const pedalboard_3d.EmissiveLight = &.{},
     mode: ContentMode = .wireframe,
     interaction: ?Interaction = null,
 };
@@ -50,6 +51,7 @@ pub const Geometry = struct {
     line_vertices: []const wireframe.Vertex,
     fill_vertices: []const wireframe.Vertex,
     equipment_vertices: []const lighting_lab.Vertex = &.{},
+    equipment_lights: []const pedalboard_3d.EmissiveLight = &.{},
     mode: ContentMode = .wireframe,
 };
 
@@ -69,6 +71,7 @@ const RenderState = struct {
     fill_count: usize,
     equipment_buffer: Object,
     equipment_count: usize,
+    equipment_lights: []const pedalboard_3d.EmissiveLight,
     mode: ContentMode,
     lighting_lab: LightingLabRenderState,
     interaction: ?Interaction,
@@ -84,6 +87,11 @@ const LightingLabRenderState = struct {
     shadow_texture: Object,
 };
 
+const GpuEmissiveLight = extern struct {
+    position_radius: [4]f32 = .{ 0, 0, 0, 0 },
+    color_intensity: [4]f32 = .{ 0, 0, 0, 0 },
+};
+
 const PbrUniforms = extern struct {
     view_projection: [16]f32,
     light_view_projection: [16]f32,
@@ -93,6 +101,10 @@ const PbrUniforms = extern struct {
     strip_size_exposure: [4]f32,
     time: f32,
     padding: [3]f32 = .{ 0, 0, 0 },
+    emissive_lights: [pedalboard_3d.Mesh.max_emissive_lights]GpuEmissiveLight =
+        [_]GpuEmissiveLight{.{}} ** pedalboard_3d.Mesh.max_emissive_lights,
+    emissive_light_count: u32 = 0,
+    emissive_padding: [3]u32 = .{ 0, 0, 0 },
 };
 
 var render_state: ?RenderState = null;
@@ -141,6 +153,12 @@ const shader_source =
     \\    float4 strip_size_exposure;
     \\    float time;
     \\    float3 padding;
+    \\    struct EmissiveLight {
+    \\        float4 position_radius;
+    \\        float4 color_intensity;
+    \\    } emissive_lights[16];
+    \\    uint emissive_light_count;
+    \\    uint3 emissive_padding;
     \\};
     \\
     \\struct PbrRasterData {
@@ -148,7 +166,7 @@ const shader_source =
     \\    float3 world_position;
     \\    float3 normal;
     \\    float3 base_color;
-    \\    float2 material;
+    \\    float3 material;
     \\    float4 shadow_position;
     \\};
     \\
@@ -162,7 +180,7 @@ const shader_source =
     \\    out.world_position = source_vertex.position.xyz;
     \\    out.normal = normalize(source_vertex.normal.xyz);
     \\    out.base_color = source_vertex.base_color.rgb;
-    \\    out.material = source_vertex.material.xy;
+    \\    out.material = source_vertex.material.xyz;
     \\    out.shadow_position = uniforms.light_view_projection * source_vertex.position;
     \\    return out;
     \\}
@@ -231,6 +249,7 @@ const shader_source =
     \\    float3 v = normalize(uniforms.camera_position.xyz - in.world_position);
     \\    float roughness = clamp(in.material.x, 0.045, 1.0);
     \\    float metallic = clamp(in.material.y, 0.0, 1.0);
+    \\    float emissive_strength = max(in.material.z, 0.0);
     \\    float3 f0 = mix(float3(0.04), in.base_color, metallic);
     \\    float3 direct = float3(0.0);
     \\    float visibility = shadow_visibility(in.shadow_position, shadow_map);
@@ -267,6 +286,27 @@ const shader_source =
     \\        max(4.0 * fill_ndotv * fill_ndotl, 0.001);
     \\    float3 fill_diffuse = (1.0 - fill_fresnel) * (1.0 - metallic) * in.base_color / M_PI_F;
     \\    direct += (fill_diffuse + fill_specular) * uniforms.padding * fill_ndotl;
+    \\    float3 indicator_light = float3(0.0);
+    \\    for (uint light_index = 0; light_index < min(uniforms.emissive_light_count, 16u); ++light_index) {
+    \\        float3 difference = uniforms.emissive_lights[light_index].position_radius.xyz - in.world_position;
+    \\        float radius = uniforms.emissive_lights[light_index].position_radius.w;
+    \\        float distance_squared = max(dot(difference, difference), 0.006);
+    \\        float distance_to_light = sqrt(distance_squared);
+    \\        float falloff = clamp(1.0 - distance_to_light / max(radius, 0.001), 0.0, 1.0);
+    \\        falloff = falloff * falloff / max(distance_squared, 0.045);
+    \\        float3 led_l = difference / max(distance_to_light, 0.001);
+    \\        float led_ndotl = max(dot(n, led_l), 0.0);
+    \\        float3 led_h = normalize(v + led_l);
+    \\        float3 led_fresnel = fresnel_schlick(max(dot(led_h, v), 0.0), f0);
+    \\        float led_distribution = distribution_ggx(n, led_h, roughness);
+    \\        float led_geometry = geometry_smith(n, v, led_l, roughness);
+    \\        float3 led_specular = led_distribution * led_geometry * led_fresnel /
+    \\            max(4.0 * max(dot(n, v), 0.0) * led_ndotl, 0.001);
+    \\        float3 led_diffuse = (1.0 - led_fresnel) * (1.0 - metallic) * in.base_color / M_PI_F;
+    \\        float3 led_radiance = uniforms.emissive_lights[light_index].color_intensity.rgb *
+    \\            uniforms.emissive_lights[light_index].color_intensity.w * falloff * 0.055;
+    \\        indicator_light += (led_diffuse + led_specular) * led_radiance * led_ndotl;
+    \\    }
     \\    float3 reflection = reflect(-v, n);
     \\    float horizon = clamp(reflection.y * 0.5 + 0.5, 0.0, 1.0);
     \\    float3 environment = mix(float3(0.006, 0.010, 0.014), float3(0.10, 0.16, 0.18), horizon);
@@ -285,7 +325,8 @@ const shader_source =
     \\    float clearcoat_fresnel = fresnel_schlick(max(dot(n, v), 0.0), float3(0.04)).r;
     \\    ambient += float3(0.52, 0.78, 0.96) * fixed_strip * clearcoat_strength *
     \\        (0.55 + clearcoat_fresnel * 3.0);
-    \\    float3 color = ambient + direct * mix(0.42, 1.0, visibility);
+    \\    float3 emitted = in.base_color * emissive_strength;
+    \\    float3 color = ambient + direct * mix(0.42, 1.0, visibility) + indicator_light + emitted;
     \\    color = aces_tonemap(color * uniforms.strip_size_exposure.z);
     \\    color = pow(color, float3(1.0 / 2.2));
     \\    return float4(color, 1.0);
@@ -466,6 +507,7 @@ pub fn run(options: Options) !void {
         .fill_count = options.fill_vertices.len,
         .equipment_buffer = equipment_buffer,
         .equipment_count = options.equipment_vertices.len,
+        .equipment_lights = options.equipment_lights,
         .mode = options.mode,
         .lighting_lab = lab_render_state,
         .interaction = options.interaction,
@@ -691,6 +733,7 @@ fn replaceGeometry(state: *RenderState, geometry: Geometry) !void {
     state.line_count = geometry.line_vertices.len;
     state.fill_count = geometry.fill_vertices.len;
     state.equipment_count = geometry.equipment_vertices.len;
+    state.equipment_lights = geometry.equipment_lights;
     state.mode = geometry.mode;
 }
 
@@ -758,7 +801,10 @@ fn draw(view: Object) !void {
         .z_far = 1,
     };
     const lab_uniforms = lightingUniforms(@floatCast(three_d_viewport.width / three_d_viewport.height));
-    const pedalboard_uniforms = pedalboardUniforms(@floatCast(pedalboard_viewport.width / pedalboard_viewport.height));
+    const pedalboard_uniforms = pedalboardUniforms(
+        @floatCast(pedalboard_viewport.width / pedalboard_viewport.height),
+        state.equipment_lights,
+    );
 
     switch (state.mode) {
         .wireframe => {},
@@ -906,7 +952,7 @@ fn lightingUniforms(aspect: f32) PbrUniforms {
     };
 }
 
-fn pedalboardUniforms(aspect: f32) PbrUniforms {
+fn pedalboardUniforms(aspect: f32, lights: []const pedalboard_3d.EmissiveLight) PbrUniforms {
     const profile = pedalboard_3d.studio_profile;
     const camera = profile.camera;
     const target = profile.target;
@@ -915,7 +961,7 @@ fn pedalboardUniforms(aspect: f32) PbrUniforms {
     const projection = perspective(27.0 * std.math.pi / 180.0, aspect, 0.1, 40.0);
     const light_view = lookAt(light, target, .{ 0, 1, 0 });
     const light_projection = perspective(84.0 * std.math.pi / 180.0, 1.0, 0.2, 30.0);
-    return .{
+    var uniforms = PbrUniforms{
         .view_projection = multiplyMatrices(projection, view),
         .light_view_projection = multiplyMatrices(light_projection, light_view),
         .camera_position = .{ camera[0], camera[1], camera[2], 1 },
@@ -930,6 +976,15 @@ fn pedalboardUniforms(aspect: f32) PbrUniforms {
         .time = 0,
         .padding = profile.fill_radiance,
     };
+    const light_count = @min(lights.len, pedalboard_3d.Mesh.max_emissive_lights);
+    for (lights[0..light_count], 0..) |emissive_light, index| {
+        uniforms.emissive_lights[index] = .{
+            .position_radius = .{ emissive_light.position[0], emissive_light.position[1], emissive_light.position[2], emissive_light.radius },
+            .color_intensity = .{ emissive_light.color[0], emissive_light.color[1], emissive_light.color[2], emissive_light.intensity },
+        };
+    }
+    uniforms.emissive_light_count = @intCast(light_count);
+    return uniforms;
 }
 
 fn perspective(field_of_view: f32, aspect: f32, near: f32, far: f32) [16]f32 {

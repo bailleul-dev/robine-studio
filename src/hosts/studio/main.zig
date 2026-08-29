@@ -29,6 +29,7 @@ const Studio = struct {
             .line_vertices = self.scene.lines(),
             .fill_vertices = self.scene.fills(),
             .equipment_vertices = self.pedalboard_mesh.items(),
+            .equipment_lights = self.pedalboard_mesh.emissiveLights(),
             .mode = switch (self.view) {
                 .rig => .pedalboard_3d,
                 .amplifier => .wireframe,
@@ -49,6 +50,7 @@ pub fn main() !void {
         .line_vertices = studio.scene.lines(),
         .fill_vertices = studio.scene.fills(),
         .equipment_vertices = studio.pedalboard_mesh.items(),
+        .equipment_lights = studio.pedalboard_mesh.emissiveLights(),
         .mode = .pedalboard_3d,
         .interaction = .{
             .context = @ptrCast(&studio),
