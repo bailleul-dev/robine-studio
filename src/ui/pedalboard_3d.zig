@@ -28,10 +28,10 @@ pub const ViewProfile = struct {
 };
 
 pub const studio_profile = ViewProfile{
-    .camera = .{ 0, 9.8, 9.2 },
-    .target = .{ 0, 2.6, -7.5 },
-    .field_of_view_degrees = 53.0,
-    .key_position = .{ -10.5, 8.8, -7.0 },
+    .camera = .{ 7.5, 13.0, 0 },
+    .target = .{ -14.5, 1.55, 0 },
+    .field_of_view_degrees = 47.0,
+    .key_position = .{ -15.5, 9.5, -7.0 },
     .key_size = .{ 1.20, 1.55 },
     .key_intensity = 250.0,
     .exposure = 1.24,
@@ -52,8 +52,8 @@ pub const rig_camera = CameraPose{
 };
 
 pub const amplifier_camera = CameraPose{
-    .camera = .{ 0, 2.45, -0.85 },
-    .target = .{ 0, 2.33, -5.55 },
+    .camera = .{ -15.0, 2.45, 0 },
+    .target = .{ -19.70, 2.33, 0 },
     .field_of_view_degrees = 65.0,
 };
 
@@ -76,6 +76,7 @@ pub const BuildState = struct {
 
 const combo_center = [3]f32{ 0, 2.33, -5.55 };
 const combo_size = [3]f32{ 7.20, 4.10, 1.78 };
+const equipment_offset_x: f32 = -14.15;
 const millimetres_to_world: f32 = 0.022;
 // Reserve the physical envelope of two opposing side sockets between pedals.
 const pedal_gap: f32 = 0.52;
@@ -159,6 +160,8 @@ pub fn build(mesh: *Mesh, rig: *const demo.Rig, state: BuildState) !void {
     mesh.* = .{};
     try addPedalboard(mesh);
     try addStudioRoom(mesh);
+    const equipment_vertex_start = mesh.len;
+    const equipment_light_start = mesh.emissive_light_len;
     try addComboAmplifier(mesh);
 
     for (rig.pedals, 0..) |pedal, index| {
@@ -176,6 +179,30 @@ pub fn build(mesh: *Mesh, rig: *const demo.Rig, state: BuildState) !void {
             null;
         try addPedal(mesh, pedal, placement.base, placement.size, enabled, mode, footswitch_mask);
     }
+    transformEquipment(mesh, equipment_vertex_start, equipment_light_start);
+}
+
+/// Rotate the canonical rig a quarter-turn so enclosure fronts point away from
+/// the left wall, then translate the combo until its back is close to it.
+fn equipmentPoint(point: [3]f32) [3]f32 {
+    return .{ equipment_offset_x + point[2], point[1], -point[0] };
+}
+
+fn equipmentDirection(direction: [3]f32) [3]f32 {
+    return .{ direction[2], direction[1], -direction[0] };
+}
+
+fn transformEquipment(mesh: *Mesh, vertex_start: usize, light_start: usize) void {
+    for (mesh.vertices[vertex_start..mesh.len]) |*item| {
+        const position = equipmentPoint(.{ item.position[0], item.position[1], item.position[2] });
+        const normal = equipmentDirection(.{ item.normal[0], item.normal[1], item.normal[2] });
+        item.position = .{ position[0], position[1], position[2], item.position[3] };
+        item.normal = .{ normal[0], normal[1], normal[2], item.normal[3] };
+    }
+    for (mesh.emissive_lights[light_start..mesh.emissive_light_len]) |*light| {
+        light.position = equipmentPoint(light.position);
+        light.direction = equipmentDirection(light.direction);
+    }
 }
 
 pub fn hitTestPedalModeSwitch(
@@ -186,11 +213,12 @@ pub fn hitTestPedalModeSwitch(
 ) bool {
     const placement = pedalPlacement(rig, pedal_index) orelse return false;
     if (rig.pedals[pedal_index].mode_switch == null) return false;
-    const center_world = modeSwitchCenter(placement);
+    const canonical_center = modeSwitchCenter(placement);
+    const center_world = equipmentPoint(canonical_center);
     const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
     const center = projectToWindow(center_world, rig_camera, viewport_aspect) orelse return false;
-    const edge_x = projectToWindow(.{ center_world[0] + 0.30, center_world[1], center_world[2] }, rig_camera, viewport_aspect) orelse return false;
-    const edge_z = projectToWindow(.{ center_world[0], center_world[1], center_world[2] + 0.38 }, rig_camera, viewport_aspect) orelse return false;
+    const edge_x = projectToWindow(equipmentPoint(.{ canonical_center[0] + 0.30, canonical_center[1], canonical_center[2] }), rig_camera, viewport_aspect) orelse return false;
+    const edge_z = projectToWindow(equipmentPoint(.{ canonical_center[0], canonical_center[1], canonical_center[2] + 0.38 }), rig_camera, viewport_aspect) orelse return false;
     const radius_x = @max(@abs(edge_x[0] - center[0]) * 1.6, 0.025);
     const radius_y = @max(@abs(edge_z[1] - center[1]) * 1.6, 0.035);
     const dx = (point[0] - center[0]) / radius_x;
@@ -213,11 +241,12 @@ pub fn hitTestPedalFootswitch(
         ((@as(f32, @floatFromInt(footswitch_index)) + 1.0) /
             @as(f32, @floatFromInt(count + 1)) - 0.5) * 0.72;
     const z = placement.base[2] + placement.size[2] * 0.29;
-    const center_world = [3]f32{ x, placement.base[1] + placement.size[1] + 0.18, z };
+    const canonical_center = [3]f32{ x, placement.base[1] + placement.size[1] + 0.18, z };
+    const center_world = equipmentPoint(canonical_center);
     const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
     const center = projectToWindow(center_world, rig_camera, viewport_aspect) orelse return false;
-    const edge_x = projectToWindow(.{ center_world[0] + 0.34, center_world[1], center_world[2] }, rig_camera, viewport_aspect) orelse return false;
-    const edge_z = projectToWindow(.{ center_world[0], center_world[1], center_world[2] + 0.34 }, rig_camera, viewport_aspect) orelse return false;
+    const edge_x = projectToWindow(equipmentPoint(.{ canonical_center[0] + 0.34, canonical_center[1], canonical_center[2] }), rig_camera, viewport_aspect) orelse return false;
+    const edge_z = projectToWindow(equipmentPoint(.{ canonical_center[0], canonical_center[1], canonical_center[2] + 0.34 }), rig_camera, viewport_aspect) orelse return false;
     const radius_x = @max(@abs(edge_x[0] - center[0]) * 1.55, 0.025);
     const radius_y = @max(@abs(edge_z[1] - center[1]) * 1.55, 0.030);
     const dx = (point[0] - center[0]) / radius_x;
@@ -287,7 +316,7 @@ fn hitTestAmplifierFromCamera(point: [2]f32, window_aspect: f32, camera: CameraP
             combo_center[1] + (if (index & 2 == 0) -half[1] else half[1]),
             combo_center[2] + (if (index & 4 == 0) -half[2] else half[2]),
         };
-        const projected = projectToWindow(corner, camera, viewport_aspect) orelse continue;
+        const projected = projectToWindow(equipmentPoint(corner), camera, viewport_aspect) orelse continue;
         minimum[0] = @min(minimum[0], projected[0]);
         minimum[1] = @min(minimum[1], projected[1]);
         maximum[0] = @max(maximum[0], projected[0]);
@@ -299,15 +328,18 @@ fn hitTestAmplifierFromCamera(point: [2]f32, window_aspect: f32, camera: CameraP
 }
 
 fn addPedalboard(mesh: *Mesh) !void {
-    const floor_width: f32 = 27.0;
-    const floor_depth: f32 = 18.0;
+    const floor_width: f32 = 42.0;
+    const floor_depth: f32 = 36.0;
+    const floor_center_z: f32 = 9.0;
+    const floor_min_z = floor_center_z - floor_depth * 0.5;
+    const floor_max_z = floor_center_z + floor_depth * 0.5;
     const column_count: usize = 24;
     const plank_length: f32 = 7.4;
     const groove: f32 = 0.055;
     const plank_width = (floor_width - groove * @as(f32, @floatFromInt(column_count - 1))) /
         @as(f32, @floatFromInt(column_count));
 
-    try addBox(mesh, .{ 0, -0.02, 0 }, .{ floor_width + 0.28, 0.38, floor_depth + 0.28 }, materials.board_base);
+    try addBox(mesh, .{ 0, -0.02, floor_center_z }, .{ floor_width + 0.28, 0.38, floor_depth + 0.28 }, materials.board_base);
 
     for (0..column_count) |column| {
         const x = -floor_width * 0.5 + plank_width * 0.5 +
@@ -317,14 +349,14 @@ fn addPedalboard(mesh: *Mesh) !void {
             1 => plank_length * 0.34,
             else => plank_length * 0.67,
         };
-        var front = -floor_depth * 0.5 - stagger;
+        var front = floor_min_z - stagger;
         var segment: usize = 0;
-        while (front < floor_depth * 0.5) : ({
+        while (front < floor_max_z) : ({
             front += plank_length;
             segment += 1;
         }) {
-            const visible_front = @max(front, -floor_depth * 0.5);
-            const visible_back = @min(front + plank_length - groove, floor_depth * 0.5);
+            const visible_front = @max(front, floor_min_z);
+            const visible_back = @min(front + plank_length - groove, floor_max_z);
             const visible_depth = visible_back - visible_front;
             if (visible_depth <= 0.08) continue;
             const material = switch ((column * 2 + segment) % 3) {
@@ -345,31 +377,33 @@ fn addStudioRoom(mesh: *Mesh) !void {
     const floor_top: f32 = 0.28;
     const wall_height: f32 = 12.0;
     const back_z: f32 = -8.92;
-    const side_x: f32 = 13.46;
+    const side_x: f32 = 20.96;
+    const side_center_z: f32 = 9.0;
+    const side_depth: f32 = 36.0;
     const wall_center_y = floor_top + wall_height * 0.5;
 
     // The rear wall is architectural geometry around a broad overlook, not a
     // textured photograph pasted onto the room.
     const window_bottom: f32 = 1.05;
     const window_top: f32 = 7.75;
-    const window_half_width: f32 = 11.15;
-    try addBox(mesh, .{ -12.16, wall_center_y, back_z }, .{ 2.83, wall_height, 0.24 }, materials.studio_wall);
-    try addBox(mesh, .{ 12.16, wall_center_y, back_z }, .{ 2.83, wall_height, 0.24 }, materials.studio_wall);
+    const window_half_width: f32 = 17.55;
+    try addBox(mesh, .{ -19.25, wall_center_y, back_z }, .{ 3.42, wall_height, 0.24 }, materials.studio_wall);
+    try addBox(mesh, .{ 19.25, wall_center_y, back_z }, .{ 3.42, wall_height, 0.24 }, materials.studio_wall);
     try addBox(mesh, .{ 0, floor_top + (window_bottom - floor_top) * 0.5, back_z }, .{ window_half_width * 2.0, window_bottom - floor_top, 0.24 }, materials.studio_wall);
     try addBox(mesh, .{ 0, window_top + (floor_top + wall_height - window_top) * 0.5, back_z }, .{ window_half_width * 2.0, floor_top + wall_height - window_top, 0.24 }, materials.studio_wall);
-    try addBox(mesh, .{ -side_x, wall_center_y, 0 }, .{ 0.24, wall_height, 18.0 }, materials.studio_wall);
-    try addBox(mesh, .{ side_x, wall_center_y, 0 }, .{ 0.24, wall_height, 18.0 }, materials.studio_wall);
+    try addBox(mesh, .{ -side_x, wall_center_y, side_center_z }, .{ 0.24, wall_height, side_depth }, materials.studio_wall);
+    try addBox(mesh, .{ side_x, wall_center_y, side_center_z }, .{ 0.24, wall_height, side_depth }, materials.studio_wall);
 
-    try addBox(mesh, .{ 0, floor_top + 0.18, back_z + 0.15 }, .{ 27.0, 0.34, 0.16 }, materials.studio_wall_trim);
-    try addBox(mesh, .{ -side_x + 0.15, floor_top + 0.18, 0 }, .{ 0.16, 0.34, 17.8 }, materials.studio_wall_trim);
-    try addBox(mesh, .{ side_x - 0.15, floor_top + 0.18, 0 }, .{ 0.16, 0.34, 17.8 }, materials.studio_wall_trim);
+    try addBox(mesh, .{ 0, floor_top + 0.18, back_z + 0.15 }, .{ 41.8, 0.34, 0.16 }, materials.studio_wall_trim);
+    try addBox(mesh, .{ -side_x + 0.15, floor_top + 0.18, side_center_z }, .{ 0.16, 0.34, side_depth - 0.2 }, materials.studio_wall_trim);
+    try addBox(mesh, .{ side_x - 0.15, floor_top + 0.18, side_center_z }, .{ 0.16, 0.34, side_depth - 0.2 }, materials.studio_wall_trim);
 
     try addWindowWall(mesh, back_z, window_bottom, window_top, window_half_width);
     try addOverlookLandscape(mesh, back_z);
 
     // Keep the familiar warm sconces on the solid outer piers.
-    try addWoodWallSconce(mesh, .{ -12.08, 2.15, back_z + 0.26 });
-    try addWoodWallSconce(mesh, .{ 12.08, 2.15, back_z + 0.26 });
+    try addWoodWallSconce(mesh, .{ -19.22, 2.15, back_z + 0.26 });
+    try addWoodWallSconce(mesh, .{ 19.22, 2.15, back_z + 0.26 });
 }
 
 fn addWindowWall(mesh: *Mesh, back_z: f32, bottom: f32, top: f32, half_width: f32) !void {
@@ -1413,13 +1447,13 @@ test "open presentation remains available outside the default rig" {
 }
 
 test "combo amplifier projects to a clickable rig-view region" {
-    const projected_center = projectToWindow(combo_center, rig_camera, (1200.0 / 760.0) * studio_viewport.width / studio_viewport.height) orelse return error.ComboBehindCamera;
+    const projected_center = projectToWindow(equipmentPoint(combo_center), rig_camera, (1200.0 / 760.0) * studio_viewport.width / studio_viewport.height) orelse return error.ComboBehindCamera;
     try std.testing.expect(hitTestAmplifier(projected_center, 1200.0 / 760.0));
     try std.testing.expect(!hitTestAmplifier(.{ 0.90, -0.80 }, 1200.0 / 760.0));
 }
 
 test "focused combo remains clickable for direct return navigation" {
-    const projected_center = projectToWindow(combo_center, amplifier_camera, (1200.0 / 760.0) * studio_viewport.width / studio_viewport.height) orelse return error.ComboBehindCamera;
+    const projected_center = projectToWindow(equipmentPoint(combo_center), amplifier_camera, (1200.0 / 760.0) * studio_viewport.width / studio_viewport.height) orelse return error.ComboBehindCamera;
     try std.testing.expect(hitTestFocusedAmplifier(projected_center, 1200.0 / 760.0));
 }
 
@@ -1432,7 +1466,7 @@ test "first semantic footswitch is picked at its projected position" {
         placement.base[2] + placement.size[2] * 0.29,
     };
     const projected = projectToWindow(
-        center_world,
+        equipmentPoint(center_world),
         rig_camera,
         aspect * studio_viewport.width / studio_viewport.height,
     ) orelse return error.FootswitchBehindCamera;
@@ -1479,7 +1513,7 @@ test "both King of Tone footswitches are independently pickable" {
             placement.base[2] + placement.size[2] * 0.29,
         };
         const projected = projectToWindow(
-            center_world,
+            equipmentPoint(center_world),
             rig_camera,
             aspect * studio_viewport.width / studio_viewport.height,
         ) orelse return error.FootswitchBehindCamera;
@@ -1497,7 +1531,7 @@ test "first pedal three-way toggle is picked at its projected position" {
     const aspect: f32 = 1200.0 / 760.0;
     const placement = pedalPlacement(&demo.rig, 0) orelse return error.MissingFirstPedal;
     const projected = projectToWindow(
-        modeSwitchCenter(placement),
+        equipmentPoint(modeSwitchCenter(placement)),
         rig_camera,
         aspect * studio_viewport.width / studio_viewport.height,
     ) orelse return error.ToggleBehindCamera;

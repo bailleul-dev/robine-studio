@@ -20,9 +20,15 @@ The initial projection contains:
   and feet are procedural geometry with runtime materials.
 - A spacious, cocooning studio shell with warm plaster walls, lateral returns,
   and wooden baseboards.
+- The room footprint is deliberately generous: a 42-unit-wide parquet floor
+  extends 36 units from the rear overlook, leaving substantial negative space
+  around the wall-mounted equipment rig.
 - A broad framed rear window wall overlooking an original procedural valley,
   layered distant ridges, and a luminous sky. The landscape MUST be runtime
   geometry rather than a copied photograph or baked room texture.
+- The complete equipment rig is quarter-turned toward the left wall: the combo
+  sits back against that wall and faces the room, while both pedal rows retain
+  their local signal-order layout in front of it.
 - Square oak wall sconces with concealed upper and lower emitters. Their visible
   warm washes use bounded runtime spot cones rather than baked wall gradients.
 - Gently rounded enclosures sized from `PedalEnclosure.dimensions` in millimetres.
@@ -96,6 +102,8 @@ that model is introduced.
 - Rear and side walls bound the parquet as a room rather than an infinite stage.
 - The default elevated rig view simultaneously reads as an indoor studio and an
   overlook, with landscape visible through the rear glazing behind the combo.
+- Pedals, amplifier geometry, emissive lights, picking volumes, and amplifier
+  focus camera all share the same left-wall equipment transform.
 - Wooden rear and side sconces are visible scene objects whose upper and lower
   emitters affect nearby materials.
 - Staggered parquet planks cover the complete visible 3D background without
