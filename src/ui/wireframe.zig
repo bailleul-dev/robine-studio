@@ -16,11 +16,13 @@ pub const Vertex = extern struct {
 pub const ViewState = enum {
     rig,
     amplifier,
+    lighting_lab,
 };
 
 pub const Action = enum {
     show_rig,
     show_amplifier,
+    show_lighting_lab,
 };
 
 pub const HitRegion = struct {
@@ -215,8 +217,12 @@ pub fn projectView(scene: *Scene, rig: *const demo.Rig, view: ViewState) !void {
             try drawAmplifierViewBar(scene, layout.slot_bar);
             try drawAmplifierBrowser(scene, layout.browser);
         },
+        .lighting_lab => {
+            try drawLightingLabFrame(scene);
+            try drawLightingLabBrowser(scene, layout.browser);
+        },
     }
-    try drawSignalChain(scene, layout.signal, rig, view);
+    if (view != .lighting_lab) try drawSignalChain(scene, layout.signal, rig, view);
     try drawTransport(scene, layout.transport);
 }
 
@@ -225,6 +231,7 @@ pub fn activate(scene: *const Scene, state: *ViewState, point: [2]f32) bool {
     const next: ViewState = switch (action) {
         .show_rig => .rig,
         .show_amplifier => .amplifier,
+        .show_lighting_lab => .lighting_lab,
     };
     if (next == state.*) return false;
     state.* = next;
@@ -586,7 +593,12 @@ fn drawAmplifierView(scene: *Scene, bounds: Bounds, rig: *const demo.Rig) !void 
     const count = @max(@as(usize, 1), rig.amplifier.controls.len);
     for (rig.amplifier.controls, 0..) |control, index| {
         const x = control_area.left + control_area.width * (@as(f32, @floatFromInt(index)) + 0.5) / @as(f32, @floatFromInt(count));
-        try drawKnob(scene, .{ x, panel.bottom + panel.height * 0.56 }, 0.040, control.normalized_value, palette.cable);
+        const center = [2]f32{ x, panel.bottom + panel.height * 0.56 };
+        try drawKnob(scene, center, 0.040, control.normalized_value, palette.cable);
+        if (index == 0) {
+            try scene.circle(center, 0.052, palette.bright);
+            try scene.addHitRegion(.{ .left = x - 0.055, .bottom = center[1] - 0.055, .width = 0.110, .height = 0.110 }, .show_lighting_lab);
+        }
         try scene.line(.{ x - 0.020, panel.bottom + 0.035 }, .{ x + 0.020, panel.bottom + 0.035 }, palette.bright);
     }
 
@@ -615,6 +627,71 @@ fn drawAmplifierView(scene: *Scene, bounds: Bounds, rig: *const demo.Rig) !void 
         .{ shell.left + 0.025, shell.top() - 0.025 },
         .{ shell.right() - 0.025, shell.top() - 0.025 },
     }) |screw| try scene.circle(screw, 0.008, palette.bright);
+}
+
+fn drawLightingLabFrame(scene: *Scene) !void {
+    const header = Bounds{ .left = -0.98, .bottom = 0.70, .width = 1.48, .height = 0.14 };
+    const viewport = Bounds{ .left = -0.98, .bottom = -0.84, .width = 1.48, .height = 1.54 };
+    try scene.fillRectangle(viewport, Color{ .r = 0.010, .g = 0.016, .b = 0.016 });
+    try scene.rectangle(viewport, palette.faint);
+    try scene.fillRectangle(header, palette.chrome);
+    try scene.rectangle(header, palette.faint);
+
+    const back = Bounds{ .left = header.left + 0.015, .bottom = header.bottom + 0.025, .width = 0.085, .height = header.height - 0.050 };
+    try scene.fillRectangle(back, palette.surface);
+    try scene.rectangle(back, palette.amber);
+    try scene.line(.{ back.left + 0.056, back.bottom + 0.014 }, .{ back.left + 0.026, back.center()[1] }, palette.bright);
+    try scene.line(.{ back.left + 0.026, back.center()[1] }, .{ back.left + 0.056, back.top() - 0.014 }, palette.bright);
+    try scene.addHitRegion(back, .show_amplifier);
+
+    const live = Bounds{ .left = back.right() + 0.022, .bottom = back.bottom, .width = 0.35, .height = back.height };
+    try scene.fillRectangle(live, palette.surface);
+    try scene.rectangle(live, palette.faint);
+    try scene.fillCircle(.{ live.left + 0.030, live.center()[1] }, 0.010, palette.green);
+    try scene.line(.{ live.left + 0.055, live.center()[1] }, .{ live.right() - 0.020, live.center()[1] }, palette.mid);
+
+    const strip = Bounds{ .left = header.right() - 0.30, .bottom = back.bottom, .width = 0.27, .height = back.height };
+    try scene.fillRectangle(strip, palette.surface);
+    try scene.rectangle(strip, palette.faint);
+    try scene.line(.{ strip.left + 0.025, strip.center()[1] }, .{ strip.right() - 0.025, strip.center()[1] }, palette.bright);
+    try scene.circle(.{ strip.left + strip.width * 0.66, strip.center()[1] }, 0.014, palette.amber);
+}
+
+fn drawLightingLabBrowser(scene: *Scene, bounds: Bounds) !void {
+    try scene.fillRectangle(bounds, palette.chrome);
+    try scene.rectangle(bounds, palette.faint);
+
+    const title = Bounds{ .left = bounds.left + 0.018, .bottom = bounds.top() - 0.10, .width = bounds.width - 0.036, .height = 0.065 };
+    try scene.fillRectangle(title, palette.surface);
+    try scene.rectangle(title, palette.amber);
+    try scene.circle(.{ title.left + 0.032, title.center()[1] }, 0.015, palette.bright);
+    try scene.line(.{ title.left + 0.065, title.center()[1] }, .{ title.right() - 0.020, title.center()[1] }, palette.mid);
+
+    const swatches = [_]Color{
+        .{ .r = 0.18, .g = 0.22, .b = 0.21 },
+        .{ .r = 0.55, .g = 0.58, .b = 0.56 },
+        .{ .r = 0.12, .g = 0.055, .b = 0.025 },
+        .{ .r = 0.11, .g = 0.18, .b = 0.16 },
+        .{ .r = 0.50, .g = 0.22, .b = 0.04 },
+        .{ .r = 0.07, .g = 0.08, .b = 0.09 },
+    };
+    const columns = 2;
+    const cell_width = (bounds.width - 0.055) / columns;
+    const cell_height: f32 = 0.25;
+    for (swatches, 0..) |swatch, index| {
+        const row = index / columns;
+        const column = index % columns;
+        const cell = Bounds{
+            .left = bounds.left + 0.020 + @as(f32, @floatFromInt(column)) * cell_width,
+            .bottom = title.bottom - 0.035 - @as(f32, @floatFromInt(row + 1)) * cell_height,
+            .width = cell_width - 0.010,
+            .height = cell_height - 0.012,
+        };
+        try scene.rectangle(cell, if (index == 1) palette.amber else palette.faint);
+        try scene.fillCircle(.{ cell.center()[0], cell.bottom + cell.height * 0.60 }, 0.045, swatch);
+        try scene.circle(.{ cell.center()[0], cell.bottom + cell.height * 0.60 }, 0.045, palette.bright);
+        try scene.line(.{ cell.left + 0.025, cell.bottom + 0.030 }, .{ cell.right() - 0.025, cell.bottom + 0.030 }, if (index == 1) palette.amber else palette.faint);
+    }
 }
 
 fn drawAmplifierViewBar(scene: *Scene, bounds: Bounds) !void {
@@ -959,7 +1036,7 @@ test "semantic rig projects to finite layered geometry" {
     }
 }
 
-test "amplifier hit region drives focused view and back navigation" {
+test "focused navigation reaches lighting lab and returns to rig" {
     var scene = Scene{};
     var state: ViewState = .rig;
     try projectView(&scene, &demo.rig, state);
@@ -970,6 +1047,24 @@ test "amplifier hit region drives focused view and back navigation" {
     }
     const amp = amplifier_hit orelse return error.MissingAmplifierHitRegion;
     try std.testing.expect(activate(&scene, &state, .{ (amp.left + amp.right) * 0.5, (amp.bottom + amp.top) * 0.5 }));
+    try std.testing.expectEqual(ViewState.amplifier, state);
+
+    try projectView(&scene, &demo.rig, state);
+    var lab_hit: ?HitRegion = null;
+    for (scene.hits()) |hit| {
+        if (hit.action == .show_lighting_lab) lab_hit = hit;
+    }
+    const lab = lab_hit orelse return error.MissingLightingLabHitRegion;
+    try std.testing.expect(activate(&scene, &state, .{ (lab.left + lab.right) * 0.5, (lab.bottom + lab.top) * 0.5 }));
+    try std.testing.expectEqual(ViewState.lighting_lab, state);
+
+    try projectView(&scene, &demo.rig, state);
+    var amp_back_hit: ?HitRegion = null;
+    for (scene.hits()) |hit| {
+        if (hit.action == .show_amplifier) amp_back_hit = hit;
+    }
+    const amp_back = amp_back_hit orelse return error.MissingAmplifierBackHitRegion;
+    try std.testing.expect(activate(&scene, &state, .{ (amp_back.left + amp_back.right) * 0.5, (amp_back.bottom + amp_back.top) * 0.5 }));
     try std.testing.expectEqual(ViewState.amplifier, state);
 
     try projectView(&scene, &demo.rig, state);

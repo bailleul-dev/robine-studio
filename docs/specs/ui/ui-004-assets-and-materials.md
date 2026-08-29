@@ -43,6 +43,13 @@ Image generation SHOULD NOT produce:
 Generated images are treated as raw art. They pass through validation and
 compilation like authored assets.
 
+Generated base-color assets MUST describe the intrinsic appearance of a surface
+under neutral illumination. They MUST NOT contain a directional highlight, a
+reflected room or light source, a cast shadow, or ambient darkening that depends
+on the final scene. These effects belong to the runtime lighting pipeline defined
+by UI-006. Local wear, pigment variation, cavities, printed artwork, and material
+masks remain valid asset content.
+
 ## Material model
 
 A material combines a bounded set of layers and parameters such as:
@@ -95,3 +102,5 @@ must not leak replaced textures or fonts.
 - Missing provenance is reported for distributable image and font assets.
 - Invalid hot reload preserves the last valid resource set.
 - Atlas edges show no neighboring-image bleeding at supported scales.
+- Rotating a light changes highlights and cast shadows without changing any
+  source asset or base-color texture.
