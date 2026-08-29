@@ -18,8 +18,9 @@ canonical states shared by the UI and audio runtime.
 - Studio MUST select the full eight-channel NAM submodel. It MUST NOT silently
   substitute the lightweight three-channel model.
 - `Mid` MUST be the initial position.
-- The initial visible rotary controls are `VOLUME` and `BLEND`. They describe
-  the physical pedal but do not interpolate NAM captures in this milestone.
+- The initial pedal MUST expose no rotary controls. Fixed-capture NAM assets do
+  not provide continuous `VOLUME` or `BLEND` parameters, so presenting inactive
+  knobs would misrepresent the available processing model.
 
 ## Range interaction
 

@@ -148,11 +148,6 @@ const amp_controls = [_]Control{
     .{ .role = "master", .label = "MASTER", .normalized_value = 0.42 },
 };
 
-const compressor_controls = [_]Control{
-    .{ .role = "volume", .label = "VOLUME", .normalized_value = 0.61 },
-    .{ .role = "blend", .label = "BLEND", .normalized_value = 0.48 },
-};
-
 const fuzz_controls = [_]Control{
     .{ .role = "output", .label = "OUTPUT", .normalized_value = 0.58 },
     .{ .role = "distortion", .label = "DIST", .normalized_value = 0.76 },
@@ -191,7 +186,7 @@ const pedals = [_]Pedal{
     .{
         .role = "compressor",
         .name = "SP COMPRESSOR",
-        .controls = &compressor_controls,
+        .controls = &.{},
         .ports = &side_ports,
         .enclosure = enclosures.single,
         .accent = .cyan,

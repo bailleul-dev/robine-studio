@@ -12,8 +12,8 @@ Imported unchanged from `/Users/guillaume/Desktop/Sp Compressor.zip` on
 - Metadata names `andiguitar` as the modeler and TONE3000 as the trainer.
 
 `Mid` is the initial first-pedal capture. The pedal's three-position `RANGE`
-toggle selects `Low`, `Mid`, or `High` directly; its two rotary controls remain
-`VOLUME` and `BLEND`.
+toggle selects `Low`, `Mid`, or `High` directly. No rotary controls are exposed:
+these fixed captures do not provide continuous `VOLUME` or `BLEND` parameters.
 
 The archive did not include a license. These files are suitable for local
 development but must not be redistributed publicly until their rights are
