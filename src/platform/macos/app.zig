@@ -555,8 +555,7 @@ const ray_tracing_shader_source =
     \\    uint2 dimensions = uniforms.sample_dimensions.yz;
     \\    if (gid.x >= dimensions.x || gid.y >= dimensions.y) return;
     \\    uint seed = gid.x + gid.y * dimensions.x + uniforms.sample_dimensions.x * 0x9e3779b9u;
-    \\    float2 jitter = float2(random_float(seed), random_float(seed));
-    \\    float2 uv = (float2(gid) + jitter) / float2(dimensions);
+    \\    float2 uv = (float2(gid) + 0.5) / float2(dimensions);
     \\    float2 screen = float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
     \\    float tan_half_fov = uniforms.camera_fov.w;
     \\    float3 direction = normalize(uniforms.forward_aspect.xyz +
@@ -577,15 +576,23 @@ const ray_tracing_shader_source =
     \\            vertices[vertex_index + 1].normal.xyz * bary.x + vertices[vertex_index + 2].normal.xyz * bary.y);
     \\        if (dot(normal, direction) > 0.0) normal = -normal;
     \\        float3 hit_position = primary_ray.origin + primary_ray.direction * hit.distance;
-    \\        ray ao_ray;
-    \\        ao_ray.origin = hit_position + normal * 0.006;
-    \\        ao_ray.direction = cosine_hemisphere(normal, seed);
-    \\        ao_ray.min_distance = 0.004;
-    \\        ao_ray.max_distance = uniforms.up_max_distance.w;
+    \\        visibility = 0.0;
     \\        intersector<triangle_data> ao_intersector;
     \\        ao_intersector.accept_any_intersection(true);
-    \\        auto ao_hit = ao_intersector.intersect(ao_ray, scene);
-    \\        visibility = ao_hit.type == intersection_type::none ? 1.0 : 0.0;
+    \\        for (uint ray_index = 0; ray_index < 4; ++ray_index) {
+    \\            ray ao_ray;
+    \\            ao_ray.origin = hit_position + normal * 0.006;
+    \\            ao_ray.direction = cosine_hemisphere(normal, seed);
+    \\            ao_ray.min_distance = 0.004;
+    \\            ao_ray.max_distance = uniforms.up_max_distance.w;
+    \\            auto ao_hit = ao_intersector.intersect(ao_ray, scene);
+    \\            float ray_visibility = 1.0;
+    \\            if (ao_hit.type != intersection_type::none) {
+    \\                float normalized_distance = saturate(ao_hit.distance / ao_ray.max_distance);
+    \\                ray_visibility = smoothstep(0.08, 0.92, normalized_distance);
+    \\            }
+    \\            visibility += ray_visibility * 0.25;
+    \\        }
     \\    }
     \\    uint sample_index = uniforms.sample_dimensions.x;
     \\    float previous = sample_index == 0 ? visibility : accumulation.read(gid).r;
@@ -614,8 +621,17 @@ const ray_tracing_shader_source =
     \\    CompositeRasterData in [[stage_in]],
     \\    texture2d<float> accumulation [[texture(0)]]) {
     \\    constexpr sampler linear_sampler(coord::normalized, address::clamp_to_edge, filter::linear);
-    \\    float visibility = accumulation.sample(linear_sampler, in.uv).r;
-    \\    float opacity = saturate((1.0 - visibility) * 0.42);
+    \\    float2 texel = 1.0 / float2(accumulation.get_width(), accumulation.get_height());
+    \\    float visibility = accumulation.sample(linear_sampler, in.uv).r * 0.25;
+    \\    visibility += accumulation.sample(linear_sampler, in.uv + float2(texel.x, 0.0)).r * 0.125;
+    \\    visibility += accumulation.sample(linear_sampler, in.uv - float2(texel.x, 0.0)).r * 0.125;
+    \\    visibility += accumulation.sample(linear_sampler, in.uv + float2(0.0, texel.y)).r * 0.125;
+    \\    visibility += accumulation.sample(linear_sampler, in.uv - float2(0.0, texel.y)).r * 0.125;
+    \\    visibility += accumulation.sample(linear_sampler, in.uv + texel).r * 0.0625;
+    \\    visibility += accumulation.sample(linear_sampler, in.uv - texel).r * 0.0625;
+    \\    visibility += accumulation.sample(linear_sampler, in.uv + float2(texel.x, -texel.y)).r * 0.0625;
+    \\    visibility += accumulation.sample(linear_sampler, in.uv + float2(-texel.x, texel.y)).r * 0.0625;
+    \\    float opacity = saturate((1.0 - visibility) * 0.34);
     \\    return float4(0.018, 0.022, 0.020, opacity);
     \\}
 ;
@@ -1085,7 +1101,7 @@ fn drawState(view: Object, state: *RenderState) !void {
     const command_buffer = try send0(Object, state.command_queue, "commandBuffer");
     const drawable_size = try send0(Size, view, "drawableSize");
     const comparison_gap = drawable_size.width * 0.012;
-    const comparison_width = (drawable_size.width * 0.74 - comparison_gap) * 0.5;
+    const comparison_width = (drawable_size.width * 0.98 - comparison_gap) * 0.5;
     const three_d_viewport = Viewport{
         .origin_x = drawable_size.width * 0.01,
         .origin_y = drawable_size.height * 0.15,
@@ -1105,8 +1121,8 @@ fn drawState(view: Object, state: *RenderState) !void {
     const pedalboard_viewport = Viewport{
         .origin_x = drawable_size.width * 0.01,
         .origin_y = drawable_size.height * 0.08,
-        .width = drawable_size.width * 0.74,
-        .height = drawable_size.height * 0.36,
+        .width = drawable_size.width * 0.98,
+        .height = drawable_size.height * 0.80,
         .z_near = 0,
         .z_far = 1,
     };

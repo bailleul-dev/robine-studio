@@ -32,7 +32,8 @@ raster-only interaction ---- 200 ms idle ----> progressive AO
 - Camera motion MUST display the normal raster/MSAA result immediately.
 - Accumulation MUST restart after a camera or geometry change.
 - Ray-traced work MUST begin only after 200 milliseconds of stable view state.
-- The MVP MUST trace one ambient-visibility sample per pixel per frame.
+- The MVP MUST trace four ambient-visibility rays per pixel per accumulation
+  frame and average them before temporal accumulation.
 - The accumulation MUST stop after 24 samples per pixel.
 - A converged view MUST issue no further ray-tracing compute dispatches.
 - Presentation rasterization MAY continue for meters, automation, and other
@@ -42,8 +43,11 @@ raster-only interaction ---- 200 ms idle ----> progressive AO
 
 The ambient-visibility buffer uses half the width and half the height of the 3D
 viewport. It is a single-channel floating-point texture, linearly reconstructed
-over the raster result. The composite is bounded to contact-darkening only and
-MUST NOT replace direct-light shadows or globally change the material palette.
+over the raster result. A bounded 3 by 3 spatial filter suppresses residual
+Monte-Carlo noise. Primary camera rays sample pixel centers without temporal
+jitter so equipment silhouettes remain stable. The composite is bounded to
+contact-darkening only and MUST NOT replace direct-light shadows or globally
+change the material palette.
 
 The current maximum occlusion distance is 1.35 scene units. Primary rays use
 the semantic camera pose and field of view; they do not infer a position from
@@ -75,6 +79,11 @@ Ray tracing is an optional backend capability:
   raster path and report a diagnostic.
 - No ray-tracing API type may leak into the declarative `ui` or `model` domains.
 
+Metal's `supportsRaytracing` capability means that acceleration structures and
+intersection functions are available. It MUST NOT be presented as proof of
+dedicated fixed-function ray-tracing hardware. On an Apple M1 this work executes
+as a Metal compute workload on the GPU.
+
 This boundary is required for future Windows and Linux render backends. They MAY
 implement the same policy with another hardware API or select the raster fallback.
 
@@ -99,7 +108,7 @@ visual convergence.
 - Returning to the pedalboard resets and recomputes the accumulation.
 - Resizing the fixed-aspect window reallocates a correctly sized half-resolution
   texture and restarts accumulation.
-- Hardware without Metal ray tracing opens and renders the same usable UI via
+- A device without the Metal ray-tracing API opens and renders the same usable UI via
   rasterization.
 - The release build completes without an external renderer or shader compiler
   dependency.

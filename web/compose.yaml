@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: robine
       POSTGRES_PASSWORD: robine
     ports:
-      - "5432:5432"
+      - "55432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U robine -d robine_amp"]
       interval: 5s

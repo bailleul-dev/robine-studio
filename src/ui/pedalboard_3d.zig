@@ -59,8 +59,8 @@ pub const amplifier_camera = CameraPose{
 pub const studio_viewport = struct {
     pub const left: f32 = 0.01;
     pub const top: f32 = 0.08;
-    pub const width: f32 = 0.74;
-    pub const height: f32 = 0.36;
+    pub const width: f32 = 0.98;
+    pub const height: f32 = 0.80;
 };
 
 const combo_center = [3]f32{ 0, 2.33, -5.55 };
@@ -156,6 +156,14 @@ pub fn build(mesh: *Mesh, rig: *const demo.Rig) !void {
 }
 
 pub fn hitTestAmplifier(point: [2]f32, window_aspect: f32) bool {
+    return hitTestAmplifierFromCamera(point, window_aspect, rig_camera);
+}
+
+pub fn hitTestFocusedAmplifier(point: [2]f32, window_aspect: f32) bool {
+    return hitTestAmplifierFromCamera(point, window_aspect, amplifier_camera);
+}
+
+fn hitTestAmplifierFromCamera(point: [2]f32, window_aspect: f32, camera: CameraPose) bool {
     const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
     const half = [3]f32{ combo_size[0] * 0.5, combo_size[1] * 0.5, combo_size[2] * 0.5 };
     var minimum = [2]f32{ std.math.inf(f32), std.math.inf(f32) };
@@ -166,7 +174,7 @@ pub fn hitTestAmplifier(point: [2]f32, window_aspect: f32) bool {
             combo_center[1] + (if (index & 2 == 0) -half[1] else half[1]),
             combo_center[2] + (if (index & 4 == 0) -half[2] else half[2]),
         };
-        const projected = projectToWindow(corner, rig_camera, viewport_aspect) orelse continue;
+        const projected = projectToWindow(corner, camera, viewport_aspect) orelse continue;
         minimum[0] = @min(minimum[0], projected[0]);
         minimum[1] = @min(minimum[1], projected[1]);
         maximum[0] = @max(maximum[0], projected[0]);
@@ -1011,4 +1019,9 @@ test "combo amplifier projects to a clickable rig-view region" {
     const projected_center = projectToWindow(combo_center, rig_camera, (1200.0 / 760.0) * studio_viewport.width / studio_viewport.height) orelse return error.ComboBehindCamera;
     try std.testing.expect(hitTestAmplifier(projected_center, 1200.0 / 760.0));
     try std.testing.expect(!hitTestAmplifier(.{ 0.90, -0.80 }, 1200.0 / 760.0));
+}
+
+test "focused combo remains clickable for direct return navigation" {
+    const projected_center = projectToWindow(combo_center, amplifier_camera, (1200.0 / 760.0) * studio_viewport.width / studio_viewport.height) orelse return error.ComboBehindCamera;
+    try std.testing.expect(hitTestFocusedAmplifier(projected_center, 1200.0 / 760.0));
 }

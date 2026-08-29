@@ -172,10 +172,8 @@ const Bounds = struct {
 
 const Layout = struct {
     toolbar: Bounds = .{ .left = -0.98, .bottom = 0.84, .width = 1.96, .height = 0.14 },
-    board: Bounds = .{ .left = -0.98, .bottom = 0.12, .width = 1.48, .height = 0.72 },
-    slot_bar: Bounds = .{ .left = -0.98, .bottom = 0.04, .width = 1.48, .height = 0.08 },
-    signal: Bounds = .{ .left = -0.98, .bottom = -0.84, .width = 1.48, .height = 0.88 },
-    browser: Bounds = .{ .left = 0.50, .bottom = -0.84, .width = 0.48, .height = 1.68 },
+    board: Bounds = .{ .left = -0.98, .bottom = -0.76, .width = 1.96, .height = 1.60 },
+    slot_bar: Bounds = .{ .left = -0.98, .bottom = -0.84, .width = 1.96, .height = 0.08 },
     transport: Bounds = .{ .left = -0.98, .bottom = -0.98, .width = 1.96, .height = 0.14 },
 };
 
@@ -210,19 +208,15 @@ pub fn projectView(scene: *Scene, rig: *const demo.Rig, view: ViewState) !void {
             const pedal_bounds = try layoutPedalBounds(layout.board, rig);
             try drawPedalboard3dFrame(scene, layout.board);
             try drawSlotBar(scene, layout.slot_bar, pedal_bounds[0..rig.pedals.len]);
-            try drawBrowser(scene, layout.browser);
         },
         .amplifier => {
             try drawAmplifierView(scene, layout.board, rig);
             try drawAmplifierViewBar(scene, layout.slot_bar);
-            try drawAmplifierBrowser(scene, layout.browser);
         },
         .lighting_lab => {
             try drawLightingLabFrame(scene);
-            try drawLightingLabBrowser(scene, layout.browser);
         },
     }
-    if (view != .lighting_lab) try drawSignalChain(scene, layout.signal, rig, view);
     try drawTransport(scene, layout.transport);
 }
 
@@ -645,13 +639,13 @@ fn drawAmplifierView(scene: *Scene, bounds: Bounds, rig: *const demo.Rig) !void 
 }
 
 fn drawLightingLabFrame(scene: *Scene) !void {
-    const header = Bounds{ .left = -0.98, .bottom = 0.70, .width = 1.48, .height = 0.14 };
-    const viewport = Bounds{ .left = -0.98, .bottom = -0.84, .width = 1.48, .height = 1.54 };
+    const header = Bounds{ .left = -0.98, .bottom = 0.70, .width = 1.96, .height = 0.14 };
+    const viewport = Bounds{ .left = -0.98, .bottom = -0.84, .width = 1.96, .height = 1.54 };
     try scene.fillRectangle(viewport, Color{ .r = 0.010, .g = 0.016, .b = 0.016 });
     try scene.rectangle(viewport, palette.faint);
     try scene.fillRectangle(header, palette.chrome);
     try scene.rectangle(header, palette.faint);
-    const comparison_split_x: f32 = -0.24;
+    const comparison_split_x: f32 = 0;
     try scene.line(.{ comparison_split_x, viewport.bottom }, .{ comparison_split_x, viewport.top() }, palette.faint);
 
     const back = Bounds{ .left = header.left + 0.015, .bottom = header.bottom + 0.025, .width = 0.085, .height = header.height - 0.050 };
@@ -1108,45 +1102,16 @@ test "physical pedal layout follows the signal chain from right to left" {
     try std.testing.expect(rig_input[0] > amp_input[0]);
 }
 
-test "focused navigation reaches lighting lab and returns to rig" {
+test "primary rig layout has no browser or signal-chain panels" {
+    const layout = Layout{};
+    try std.testing.expectApproxEqAbs(@as(f32, -0.98), layout.board.left, 0.0001);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.96), layout.board.width, 0.0001);
+    try std.testing.expectApproxEqAbs(@as(f32, -0.76), layout.board.bottom, 0.0001);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.60), layout.board.height, 0.0001);
+
     var scene = Scene{};
-    var state: ViewState = .rig;
-    try projectView(&scene, &demo.rig, state);
-
-    var amplifier_hit: ?HitRegion = null;
-    for (scene.hits()) |hit| {
-        if (hit.action == .show_amplifier) amplifier_hit = hit;
-    }
-    const amp = amplifier_hit orelse return error.MissingAmplifierHitRegion;
-    try std.testing.expect(activate(&scene, &state, .{ (amp.left + amp.right) * 0.5, (amp.bottom + amp.top) * 0.5 }));
-    try std.testing.expectEqual(ViewState.amplifier, state);
-
-    try projectView(&scene, &demo.rig, state);
-    var lab_hit: ?HitRegion = null;
-    for (scene.hits()) |hit| {
-        if (hit.action == .show_lighting_lab) lab_hit = hit;
-    }
-    const lab = lab_hit orelse return error.MissingLightingLabHitRegion;
-    try std.testing.expect(activate(&scene, &state, .{ (lab.left + lab.right) * 0.5, (lab.bottom + lab.top) * 0.5 }));
-    try std.testing.expectEqual(ViewState.lighting_lab, state);
-
-    try projectView(&scene, &demo.rig, state);
-    var amp_back_hit: ?HitRegion = null;
-    for (scene.hits()) |hit| {
-        if (hit.action == .show_amplifier) amp_back_hit = hit;
-    }
-    const amp_back = amp_back_hit orelse return error.MissingAmplifierBackHitRegion;
-    try std.testing.expect(activate(&scene, &state, .{ (amp_back.left + amp_back.right) * 0.5, (amp_back.bottom + amp_back.top) * 0.5 }));
-    try std.testing.expectEqual(ViewState.amplifier, state);
-
-    try projectView(&scene, &demo.rig, state);
-    var back_hit: ?HitRegion = null;
-    for (scene.hits()) |hit| {
-        if (hit.action == .show_rig) back_hit = hit;
-    }
-    const back = back_hit orelse return error.MissingRigHitRegion;
-    try std.testing.expect(activate(&scene, &state, .{ (back.left + back.right) * 0.5, (back.bottom + back.top) * 0.5 }));
-    try std.testing.expectEqual(ViewState.rig, state);
+    try projectView(&scene, &demo.rig, .rig);
+    try std.testing.expectEqual(@as(usize, 0), scene.hits().len);
 }
 
 fn expectFiniteVertex(item: Vertex) !void {

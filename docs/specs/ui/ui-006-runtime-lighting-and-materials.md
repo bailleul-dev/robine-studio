@@ -115,6 +115,10 @@ support fall back to 2x and then 1x. The shadow-only pass remains single-sampled
 Backend-specific objects remain inside `platform`; declarative mesh, material,
 and profile data remain inside `ui`.
 
+UI-010 adds optional progressive contact occlusion while a view is static. This
+compute path uses Metal ray-intersection APIs but does not assume dedicated
+ray-tracing hardware; raster lighting remains the canonical fallback.
+
 ## Reference comparison view
 
 The Lighting Lab presents an animated side-by-side comparison driven by the same

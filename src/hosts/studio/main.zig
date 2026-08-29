@@ -14,6 +14,12 @@ const Studio = struct {
 
     fn pointerDown(context: *anyopaque, point: [2]f32, window_aspect: f32) bool {
         const self: *Studio = @ptrCast(@alignCast(context));
+        if (self.view == .rig and self.amplifier_focused and
+            robine.ui.pedalboard_3d.hitTestFocusedAmplifier(point, window_aspect))
+        {
+            self.amplifier_focused = false;
+            return true;
+        }
         if (self.view == .rig and !self.amplifier_focused and
             robine.ui.pedalboard_3d.hitTestAmplifier(point, window_aspect))
         {
