@@ -390,22 +390,14 @@ pub fn hitTestAmplifierPower(point: [2]f32, window_aspect: f32, id: AmplifierId)
     const placement = comboPlacement(id);
     const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
     const camera = amplifierCamera(id);
-    const scale_x = combo_size[0] / 5.15;
     const scale_y = combo_size[1] / 3.0;
-    const scale_z = combo_size[2] / 1.34;
-    const floor_top: f32 = 0.28;
-    const front_z = placement.center[2] + combo_size[2] * 0.5;
-    const panel_y = floor_top + combo_size[1] - 0.34 * scale_y;
-    const canonical_center = rotatePointY(
-        .{ placement.center[0] - 1.82 * scale_x, panel_y, front_z + 0.150 * scale_z },
-        placement.center,
-        placement.yaw_degrees,
-    );
-    const canonical_x_edge = rotatePointY(
-        .{ placement.center[0] - 1.82 * scale_x + 0.16, panel_y, front_z + 0.150 * scale_z },
-        placement.center,
-        placement.yaw_degrees,
-    );
+    const canonical_center = amplifierPowerCanonicalCenter(placement);
+    const x_offset = rotateDirectionY(.{ 0.16, 0, 0 }, placement.yaw_degrees);
+    const canonical_x_edge = [3]f32{
+        canonical_center[0] + x_offset[0],
+        canonical_center[1],
+        canonical_center[2] + x_offset[2],
+    };
     const center = projectToWindow(equipmentPoint(canonical_center), camera, viewport_aspect) orelse return false;
     const x_edge = projectToWindow(equipmentPoint(canonical_x_edge), camera, viewport_aspect) orelse return false;
     const y_edge = projectToWindow(equipmentPoint(.{ canonical_center[0], canonical_center[1] + 0.18 * scale_y, canonical_center[2] }), camera, viewport_aspect) orelse return false;
@@ -414,6 +406,20 @@ pub fn hitTestAmplifierPower(point: [2]f32, window_aspect: f32, id: AmplifierId)
     const padding: f32 = 0.014;
     return @abs(point[0] - center[0]) <= half_width + padding and
         @abs(point[1] - center[1]) <= half_height + padding;
+}
+
+fn amplifierPowerCanonicalCenter(placement: ComboPlacement) [3]f32 {
+    const scale_x = combo_size[0] / 5.15;
+    const scale_y = combo_size[1] / 3.0;
+    const scale_z = combo_size[2] / 1.34;
+    const floor_top: f32 = 0.28;
+    const front_z = placement.center[2] + combo_size[2] * 0.5;
+    const panel_y = floor_top + combo_size[1] - 0.34 * scale_y;
+    return rotatePointY(
+        .{ placement.center[0] - 1.82 * scale_x, panel_y, front_z + 0.150 * scale_z },
+        placement.center,
+        placement.yaw_degrees,
+    );
 }
 
 fn hitTestAmplifierPlacement(
@@ -1838,6 +1844,19 @@ test "studio rug selects the generated base-color texture slot" {
 test "focused combo remains clickable for direct return navigation" {
     const projected_center = projectToWindow(equipmentPoint(combo_center), amplifier_camera, (1200.0 / 760.0) * studio_viewport.width / studio_viewport.height) orelse return error.ComboBehindCamera;
     try std.testing.expect(hitTestFocusedAmplifier(projected_center, 1200.0 / 760.0, .dumble));
+}
+
+test "each focused amplifier exposes its own power switch hit target" {
+    const window_aspect = 1200.0 / 760.0;
+    const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
+    for (combo_placements) |placement| {
+        const projected = projectToWindow(
+            equipmentPoint(amplifierPowerCanonicalCenter(placement)),
+            amplifierCamera(placement.id),
+            viewport_aspect,
+        ) orelse return error.PowerSwitchBehindCamera;
+        try std.testing.expect(hitTestAmplifierPower(projected, window_aspect, placement.id));
+    }
 }
 
 test "first semantic footswitch is picked at its projected position" {
