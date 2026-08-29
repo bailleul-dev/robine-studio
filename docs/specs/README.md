@@ -25,10 +25,12 @@ recommended behavior, and optional behavior respectively.
 | [MOD-002](model/mod-002-assembly-and-spatial-relations.md) | Model | Draft | Mechanical assembly, placement constraints, articulation, and views |
 | [MOD-003](model/mod-003-connectivity-and-wiring.md) | Model | Draft | Internal electronics, external cabling, and typed connectivity graphs |
 | [MOD-004](model/mod-004-pedal-form-factors.md) | Model | Draft | Standard pedal footprints and enclosure definitions |
+| [MOD-005](model/mod-005-jack-mounting.md) | Model | Draft | Semantic jack surfaces, slots, sockets, plugs, and cable anchors |
 | [UI-001](ui/ui-001-scene-composition.md) | UI | Draft | Equipment-to-scene projection and visual composition |
 | [UI-002](ui/ui-002-rendering-pipeline.md) | UI | Draft | Hybrid 3D equipment and 2D overlay rendering pipeline |
 | [UI-003](ui/ui-003-controls-and-interaction.md) | UI | Draft | Semantic equipment actions and parameter gestures |
 | [UI-004](ui/ui-004-assets-and-materials.md) | UI | Draft | Asset compilation and procedural material system |
+| [UI-005](ui/ui-005-focused-equipment-navigation.md) | UI | Draft | Semantic picking and focused equipment views |
 | [STU-001](studio/stu-001-rendering-engine-mvp.md) | Studio | Draft | No-audio equipment-modeling and rendering MVP |
 | [AUD-001](audio/aud-001-audio-integration-boundary.md) | Audio | Deferred | Real-time audio subsystem boundary |
 | [HOST-001](hosts/host-001-runtime-hosts.md) | Hosts | Deferred | Studio, standalone, CLAP, and VST3 hosts |

@@ -24,6 +24,30 @@ pub const PedalEnclosure = struct {
     dimensions: DimensionsMm,
 };
 
+pub const JackSurface = enum {
+    left_side,
+    right_side,
+    top,
+};
+
+pub const SurfaceSlot = enum {
+    start,
+    center,
+    end,
+};
+
+pub const PortRole = enum {
+    input,
+    output,
+};
+
+pub const PedalPort = struct {
+    id: []const u8,
+    role: PortRole,
+    surface: JackSurface,
+    slot: SurfaceSlot,
+};
+
 pub const enclosures = struct {
     pub const mini = PedalEnclosure{
         .id = "generic.mini",
@@ -62,6 +86,7 @@ pub const Pedal = struct {
     role: []const u8,
     name: []const u8,
     controls: []const Control,
+    ports: []const PedalPort,
     enclosure: PedalEnclosure = enclosures.single,
     presentation: Presentation = .closed,
     accent: Accent,
@@ -135,11 +160,22 @@ const drive_controls = [_]Control{
     .{ .role = "gain", .label = "GAIN", .normalized_value = 0.78 },
 };
 
+const side_ports = [_]PedalPort{
+    .{ .id = "audio.input", .role = .input, .surface = .left_side, .slot = .start },
+    .{ .id = "audio.output", .role = .output, .surface = .right_side, .slot = .start },
+};
+
+const top_ports = [_]PedalPort{
+    .{ .id = "audio.input", .role = .input, .surface = .top, .slot = .start },
+    .{ .id = "audio.output", .role = .output, .surface = .top, .slot = .end },
+};
+
 const pedals = [_]Pedal{
     .{
         .role = "compressor",
         .name = "COMPRESSOR",
         .controls = &compressor_controls,
+        .ports = &side_ports,
         .enclosure = enclosures.single,
         .accent = .cyan,
     },
@@ -147,6 +183,7 @@ const pedals = [_]Pedal{
         .role = "fuzz_service",
         .name = "FUZZ",
         .controls = &fuzz_controls,
+        .ports = &top_ports,
         .enclosure = enclosures.single,
         .presentation = .open,
         .accent = .coral,
@@ -155,6 +192,7 @@ const pedals = [_]Pedal{
         .role = "phaser",
         .name = "PHASER",
         .controls = &phaser_controls,
+        .ports = &side_ports,
         .enclosure = enclosures.single,
         .accent = .amber,
     },
@@ -162,6 +200,7 @@ const pedals = [_]Pedal{
         .role = "modulation",
         .name = "MODULATION",
         .controls = &modulation_controls,
+        .ports = &top_ports,
         .enclosure = enclosures.double,
         .accent = .green,
         .footswitch_count = 2,
@@ -170,6 +209,7 @@ const pedals = [_]Pedal{
         .role = "overdrive",
         .name = "OVERDRIVE",
         .controls = &drive_controls,
+        .ports = &side_ports,
         .enclosure = enclosures.single,
         .accent = .violet,
         .footswitch_count = 2,
@@ -199,5 +239,8 @@ test "demo rig is connected semantically" {
     try std.testing.expectEqual(Presentation.open, rig.pedals[1].presentation);
     try std.testing.expectEqual(PedalFormFactor.double, rig.pedals[3].enclosure.form_factor);
     try std.testing.expectEqual(@as(f32, 2), rig.pedals[3].enclosure.footprint_units);
+    try std.testing.expectEqual(JackSurface.left_side, rig.pedals[0].ports[0].surface);
+    try std.testing.expectEqual(JackSurface.top, rig.pedals[1].ports[0].surface);
+    try std.testing.expectEqual(PortRole.output, rig.pedals[3].ports[1].role);
     try std.testing.expectEqual(@as(u8, 2), rig.cabinet.speaker_count);
 }

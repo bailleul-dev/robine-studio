@@ -19,7 +19,8 @@ Pedal sizing has three layers:
 1. `PedalFormFactor` provides a stable semantic category.
 2. `PedalEnclosure` is a catalog part with exact dimensions and mounting data.
 3. A product selects an enclosure and mounts its controls, jacks, and electronics
-   through the MOD-002 assembly model.
+   through the MOD-002 assembly model. Jack placement follows MOD-005 and is not
+   implied by the form factor.
 
 This permits several physically different enclosures to share the `single`
 category while remaining mechanically accurate.
@@ -82,4 +83,3 @@ factors while retaining their exact dimensions and compatibility metadata.
 - Physical fit validation uses millimetres rather than nominal layout units.
 - Product descriptions contain no pedal width or screen coordinates when a
   catalog enclosure already defines them.
-

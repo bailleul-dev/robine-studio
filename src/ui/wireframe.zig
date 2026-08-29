@@ -13,14 +13,39 @@ pub const Vertex = extern struct {
     color: [4]f32,
 };
 
+pub const ViewState = enum {
+    rig,
+    amplifier,
+};
+
+pub const Action = enum {
+    show_rig,
+    show_amplifier,
+};
+
+pub const HitRegion = struct {
+    left: f32,
+    bottom: f32,
+    right: f32,
+    top: f32,
+    action: Action,
+
+    fn contains(self: HitRegion, point: [2]f32) bool {
+        return point[0] >= self.left and point[0] <= self.right and point[1] >= self.bottom and point[1] <= self.top;
+    }
+};
+
 pub const Scene = struct {
     pub const max_line_vertices = 12_000;
     pub const max_fill_vertices = 12_000;
+    pub const max_hit_regions = 32;
 
     line_vertices: [max_line_vertices]Vertex = undefined,
     line_len: usize = 0,
     fill_vertices: [max_fill_vertices]Vertex = undefined,
     fill_len: usize = 0,
+    hit_regions: [max_hit_regions]HitRegion = undefined,
+    hit_len: usize = 0,
 
     pub fn lines(self: *const Scene) []const Vertex {
         return self.line_vertices[0..self.line_len];
@@ -28,6 +53,19 @@ pub const Scene = struct {
 
     pub fn fills(self: *const Scene) []const Vertex {
         return self.fill_vertices[0..self.fill_len];
+    }
+
+    pub fn hits(self: *const Scene) []const HitRegion {
+        return self.hit_regions[0..self.hit_len];
+    }
+
+    pub fn actionAt(self: *const Scene, point: [2]f32) ?Action {
+        var index = self.hit_len;
+        while (index > 0) {
+            index -= 1;
+            if (self.hit_regions[index].contains(point)) return self.hit_regions[index].action;
+        }
+        return null;
     }
 
     fn line(self: *Scene, from: [2]f32, to: [2]f32, color: Color) !void {
@@ -85,6 +123,18 @@ pub const Scene = struct {
             const end_angle = tau * @as(f32, @floatFromInt(index + 1)) / segment_count;
             try self.triangle(center, pointOnCircle(center, radius, start_angle), pointOnCircle(center, radius, end_angle), color);
         }
+    }
+
+    fn addHitRegion(self: *Scene, bounds: Bounds, action: Action) !void {
+        if (self.hit_len >= self.hit_regions.len) return error.SceneCapacityExceeded;
+        self.hit_regions[self.hit_len] = .{
+            .left = bounds.left,
+            .bottom = bounds.bottom,
+            .right = bounds.right(),
+            .top = bounds.top(),
+            .action = action,
+        };
+        self.hit_len += 1;
     }
 };
 
@@ -144,17 +194,41 @@ const palette = struct {
 };
 
 pub fn project(scene: *Scene, rig: *const demo.Rig) !void {
+    try projectView(scene, rig, .rig);
+}
+
+pub fn projectView(scene: *Scene, rig: *const demo.Rig, view: ViewState) !void {
     scene.* = Scene{};
     const layout = Layout{};
 
     try scene.fillRectangle(.{ .left = -1, .bottom = -1, .width = 2, .height = 2 }, palette.background);
     try drawToolbar(scene, layout.toolbar);
-    const pedal_bounds = try drawPedalboard(scene, layout.board, rig.pedals);
-    try drawSlotBar(scene, layout.slot_bar, pedal_bounds[0..rig.pedals.len]);
-    try drawSignalChain(scene, layout.signal, rig);
-    try drawBrowser(scene, layout.browser);
+    switch (view) {
+        .rig => {
+            const pedal_bounds = try drawPedalboard(scene, layout.board, rig);
+            try drawSlotBar(scene, layout.slot_bar, pedal_bounds[0..rig.pedals.len]);
+            try drawMainConnections(scene, layout.board, pedal_bounds[0..rig.pedals.len], rig);
+            try drawBrowser(scene, layout.browser);
+        },
+        .amplifier => {
+            try drawAmplifierView(scene, layout.board, rig);
+            try drawAmplifierViewBar(scene, layout.slot_bar);
+            try drawAmplifierBrowser(scene, layout.browser);
+        },
+    }
+    try drawSignalChain(scene, layout.signal, rig, view);
     try drawTransport(scene, layout.transport);
-    try drawMainConnections(scene, layout.board, pedal_bounds[0..rig.pedals.len], rig.connections);
+}
+
+pub fn activate(scene: *const Scene, state: *ViewState, point: [2]f32) bool {
+    const action = scene.actionAt(point) orelse return false;
+    const next: ViewState = switch (action) {
+        .show_rig => .rig,
+        .show_amplifier => .amplifier,
+    };
+    if (next == state.*) return false;
+    state.* = next;
+    return true;
 }
 
 fn drawToolbar(scene: *Scene, bounds: Bounds) !void {
@@ -206,7 +280,8 @@ fn drawToolbar(scene: *Scene, bounds: Bounds) !void {
     }
 }
 
-fn drawPedalboard(scene: *Scene, bounds: Bounds, pedals: []const demo.Pedal) ![8]Bounds {
+fn drawPedalboard(scene: *Scene, bounds: Bounds, rig: *const demo.Rig) ![8]Bounds {
+    const pedals = rig.pedals;
     if (pedals.len > 8) return error.TooManyPedalsForWireframe;
     try scene.fillRectangle(bounds, palette.board_a);
     try scene.rectangle(bounds, palette.faint);
@@ -248,16 +323,16 @@ fn drawPedalboard(scene: *Scene, bounds: Bounds, pedals: []const demo.Pedal) ![8
         };
         result[index] = pedal_bounds;
         if (pedal.presentation == .open)
-            try drawOpenPedal(scene, pedal_bounds, &pedal)
+            try drawOpenPedal(scene, pedal_bounds, &pedal, index, rig.connections)
         else
-            try drawClosedPedal(scene, pedal_bounds, &pedal);
+            try drawClosedPedal(scene, pedal_bounds, &pedal, index, rig.connections);
         cursor += width + gap;
     }
 
     return result;
 }
 
-fn drawClosedPedal(scene: *Scene, bounds: Bounds, pedal: *const demo.Pedal) !void {
+fn drawClosedPedal(scene: *Scene, bounds: Bounds, pedal: *const demo.Pedal, pedal_index: usize, connections: []const demo.Connection) !void {
     const accent = accentColor(pedal.accent);
     const body = darken(accent, 0.16);
     try scene.fillRectangle(bounds, body);
@@ -286,10 +361,10 @@ fn drawClosedPedal(scene: *Scene, bounds: Bounds, pedal: *const demo.Pedal) !voi
     }
 
     try scene.fillCircle(.{ bounds.left + bounds.width * 0.5, bounds.bottom + 0.18 }, 0.011, palette.green);
-    try drawJacks(scene, bounds);
+    try drawJacks(scene, bounds, pedal, pedal_index, connections);
 }
 
-fn drawOpenPedal(scene: *Scene, bounds: Bounds, pedal: *const demo.Pedal) !void {
+fn drawOpenPedal(scene: *Scene, bounds: Bounds, pedal: *const demo.Pedal, pedal_index: usize, connections: []const demo.Connection) !void {
     const accent = accentColor(pedal.accent);
     try scene.fillRectangle(bounds, palette.surface);
     try scene.rectangle(bounds, accent);
@@ -337,16 +412,86 @@ fn drawOpenPedal(scene: *Scene, bounds: Bounds, pedal: *const demo.Pedal) !void 
 
     try scene.line(.{ pcb.left, pcb.bottom + 0.03 }, .{ battery.left, battery.top() - 0.02 }, palette.cable);
     try scene.line(.{ pcb.right(), pcb.bottom + 0.04 }, .{ battery.right(), battery.top() - 0.04 }, palette.blue);
-    try drawJacks(scene, bounds);
+    try drawJacks(scene, bounds, pedal, pedal_index, connections);
 }
 
-fn drawJacks(scene: *Scene, bounds: Bounds) !void {
-    const input = [2]f32{ bounds.left, bounds.top() - 0.12 };
-    const output = [2]f32{ bounds.right(), bounds.top() - 0.12 };
-    try scene.fillCircle(input, 0.014, palette.chrome);
-    try scene.circle(input, 0.018, palette.cable);
-    try scene.fillCircle(output, 0.014, palette.chrome);
-    try scene.circle(output, 0.018, palette.cable);
+const PortProjection = struct {
+    socket: [2]f32,
+    cable_anchor: [2]f32,
+    outward: [2]f32,
+};
+
+fn drawJacks(scene: *Scene, bounds: Bounds, pedal: *const demo.Pedal, pedal_index: usize, connections: []const demo.Connection) !void {
+    for (pedal.ports) |port| {
+        try drawJack(scene, projectPort(bounds, port), isPortConnected(connections, pedal_index, port.role));
+    }
+}
+
+fn drawJack(scene: *Scene, projection: PortProjection, plugged: bool) !void {
+    try scene.fillCircle(projection.socket, 0.018, palette.chrome_light);
+    try scene.circle(projection.socket, 0.020, palette.bright);
+    try scene.fillCircle(projection.socket, 0.010, palette.background);
+    try scene.circle(projection.socket, 0.010, palette.mid);
+
+    if (!plugged) return;
+
+    const perpendicular = [2]f32{ -projection.outward[1], projection.outward[0] };
+    const base = addScaled(projection.socket, projection.outward, 0.008);
+    const tip = addScaled(projection.socket, projection.outward, 0.035);
+    const half_width: f32 = 0.010;
+    const plug = [_][2]f32{
+        addScaled(base, perpendicular, half_width),
+        addScaled(tip, perpendicular, half_width),
+        addScaled(tip, perpendicular, -half_width),
+        addScaled(base, perpendicular, -half_width),
+    };
+    try scene.triangle(plug[0], plug[1], plug[2], palette.chrome);
+    try scene.triangle(plug[0], plug[2], plug[3], palette.chrome);
+    try scene.line(plug[0], plug[1], palette.bright);
+    try scene.line(plug[1], plug[2], palette.cable);
+    try scene.line(plug[2], plug[3], palette.bright);
+}
+
+fn projectPort(bounds: Bounds, port: demo.PedalPort) PortProjection {
+    const along = switch (port.slot) {
+        .start => @as(f32, 0.76),
+        .center => @as(f32, 0.50),
+        .end => @as(f32, 0.24),
+    };
+    const socket: [2]f32 = switch (port.surface) {
+        .left_side => .{ bounds.left, bounds.bottom + bounds.height * along },
+        .right_side => .{ bounds.right(), bounds.bottom + bounds.height * along },
+        .top => .{ bounds.left + bounds.width * (1.0 - along), bounds.top() },
+    };
+    const outward: [2]f32 = switch (port.surface) {
+        .left_side => .{ -1, 0 },
+        .right_side => .{ 1, 0 },
+        .top => .{ 0, 1 },
+    };
+    return .{
+        .socket = socket,
+        .cable_anchor = addScaled(socket, outward, 0.040),
+        .outward = outward,
+    };
+}
+
+fn addScaled(point: [2]f32, direction: [2]f32, scale: f32) [2]f32 {
+    return .{ point[0] + direction[0] * scale, point[1] + direction[1] * scale };
+}
+
+fn isPortConnected(connections: []const demo.Connection, pedal_index: usize, role: demo.PortRole) bool {
+    for (connections) |connection| {
+        if (endpointMatchesPort(connection.from, pedal_index, role) or endpointMatchesPort(connection.to, pedal_index, role)) return true;
+    }
+    return false;
+}
+
+fn endpointMatchesPort(endpoint: demo.Endpoint, pedal_index: usize, role: demo.PortRole) bool {
+    return switch (endpoint) {
+        .pedal_input => |index| role == .input and index == pedal_index,
+        .pedal_output => |index| role == .output and index == pedal_index,
+        else => false,
+    };
 }
 
 fn drawKnob(scene: *Scene, center: [2]f32, radius: f32, value: f32, accent: Color) !void {
@@ -378,20 +523,10 @@ fn drawSlotBar(scene: *Scene, bounds: Bounds, pedals: []const Bounds) !void {
     }
 }
 
-fn drawMainConnections(scene: *Scene, board: Bounds, pedals: []const Bounds, connections: []const demo.Connection) !void {
-    for (pedals, 0..) |pedal, index| {
-        const top_input = [2]f32{ pedal.left + pedal.width * 0.28, pedal.top() };
-        const top_output = [2]f32{ pedal.left + pedal.width * 0.72, pedal.top() };
-        const rail_y = board.top() - 0.035 - @as(f32, @floatFromInt(index % 2)) * 0.025;
-        try scene.line(top_input, .{ top_input[0], rail_y }, palette.cable);
-        try scene.line(top_output, .{ top_output[0], rail_y }, palette.cable);
-        try scene.circle(top_input, 0.010, palette.cable);
-        try scene.circle(top_output, 0.010, palette.cable);
-    }
-
-    for (connections) |connection| {
-        const from = endpointPosition(connection.from, board, pedals);
-        const to = endpointPosition(connection.to, board, pedals);
+fn drawMainConnections(scene: *Scene, board: Bounds, pedals: []const Bounds, rig: *const demo.Rig) !void {
+    for (rig.connections) |connection| {
+        const from = try endpointPosition(connection.from, board, pedals, rig);
+        const to = try endpointPosition(connection.to, board, pedals, rig);
         const route_y = @max(from[1], to[1]) + 0.035;
         try scene.line(from, .{ from[0], route_y }, palette.cable);
         try scene.line(.{ from[0], route_y }, .{ to[0], route_y }, palette.cable);
@@ -399,16 +534,148 @@ fn drawMainConnections(scene: *Scene, board: Bounds, pedals: []const Bounds, con
     }
 }
 
-fn endpointPosition(endpoint: demo.Endpoint, board: Bounds, pedals: []const Bounds) [2]f32 {
+fn endpointPosition(endpoint: demo.Endpoint, board: Bounds, pedals: []const Bounds, rig: *const demo.Rig) ![2]f32 {
     return switch (endpoint) {
-        .rig_input => .{ board.left + 0.008, pedals[0].top() - 0.12 },
-        .pedal_input => |index| .{ pedals[index].left, pedals[index].top() - 0.12 },
-        .pedal_output => |index| .{ pedals[index].right(), pedals[index].top() - 0.12 },
-        .amplifier_input => .{ board.right() - 0.008, pedals[pedals.len - 1].top() - 0.12 },
+        .rig_input => blk: {
+            const first_input = try projectPedalPort(pedals[0], rig.pedals[0], .input);
+            break :blk .{ board.left + 0.008, first_input.cable_anchor[1] };
+        },
+        .pedal_input => |index| (try projectPedalPort(pedals[index], rig.pedals[index], .input)).cable_anchor,
+        .pedal_output => |index| (try projectPedalPort(pedals[index], rig.pedals[index], .output)).cable_anchor,
+        .amplifier_input => blk: {
+            const last_index = rig.pedals.len - 1;
+            const last_output = try projectPedalPort(pedals[last_index], rig.pedals[last_index], .output);
+            break :blk .{ board.right() - 0.008, last_output.cable_anchor[1] };
+        },
     };
 }
 
-fn drawSignalChain(scene: *Scene, bounds: Bounds, rig: *const demo.Rig) !void {
+fn projectPedalPort(bounds: Bounds, pedal: demo.Pedal, role: demo.PortRole) !PortProjection {
+    for (pedal.ports) |port| {
+        if (port.role == role) return projectPort(bounds, port);
+    }
+    return error.MissingPedalPort;
+}
+
+fn drawAmplifierView(scene: *Scene, bounds: Bounds, rig: *const demo.Rig) !void {
+    try scene.fillRectangle(bounds, palette.board_a);
+    try scene.rectangle(bounds, palette.faint);
+
+    const shell = Bounds{ .left = bounds.left + 0.07, .bottom = bounds.bottom + 0.075, .width = bounds.width - 0.14, .height = bounds.height - 0.15 };
+    try scene.fillRectangle(shell, palette.chrome);
+    try scene.rectangle(shell, palette.mid);
+    try scene.rectangle(shell.inset(0.014), palette.faint);
+
+    const handle = Bounds{ .left = shell.left + shell.width * 0.36, .bottom = shell.top() + 0.010, .width = shell.width * 0.28, .height = 0.045 };
+    try scene.fillRectangle(handle, palette.surface);
+    try scene.rectangle(handle, palette.mid);
+    try scene.circle(.{ handle.left, handle.bottom }, 0.012, palette.bright);
+    try scene.circle(.{ handle.right(), handle.bottom }, 0.012, palette.bright);
+
+    const panel = Bounds{ .left = shell.left + 0.055, .bottom = shell.top() - 0.270, .width = shell.width - 0.110, .height = 0.205 };
+    try scene.fillRectangle(panel, Color{ .r = 0.19, .g = 0.075, .b = 0.025 });
+    try scene.rectangle(panel, palette.cable);
+    try scene.rectangle(panel.inset(0.010), darken(palette.cable, 0.45));
+
+    const power = Bounds{ .left = panel.left + 0.035, .bottom = panel.bottom + 0.055, .width = 0.055, .height = 0.085 };
+    try scene.fillRectangle(power, palette.background);
+    try scene.rectangle(power, palette.bright);
+    try scene.fillRectangle(power.inset(0.013), palette.amber);
+
+    const control_area = Bounds{ .left = power.right() + 0.045, .bottom = panel.bottom, .width = panel.width - 0.245, .height = panel.height };
+    const count = @max(@as(usize, 1), rig.amplifier.controls.len);
+    for (rig.amplifier.controls, 0..) |control, index| {
+        const x = control_area.left + control_area.width * (@as(f32, @floatFromInt(index)) + 0.5) / @as(f32, @floatFromInt(count));
+        try drawKnob(scene, .{ x, panel.bottom + panel.height * 0.56 }, 0.040, control.normalized_value, palette.cable);
+        try scene.line(.{ x - 0.020, panel.bottom + 0.035 }, .{ x + 0.020, panel.bottom + 0.035 }, palette.bright);
+    }
+
+    const input = [2]f32{ panel.right() - 0.055, panel.bottom + panel.height * 0.55 };
+    try scene.fillCircle(input, 0.021, palette.chrome_light);
+    try scene.circle(input, 0.024, palette.bright);
+    try scene.fillCircle(input, 0.012, palette.background);
+    try scene.line(.{ input[0], input[1] - 0.012 }, .{ input[0], panel.bottom - 0.045 }, palette.cable);
+
+    const grille = Bounds{ .left = shell.left + 0.045, .bottom = shell.bottom + 0.045, .width = shell.width - 0.090, .height = panel.bottom - shell.bottom - 0.075 };
+    try scene.fillRectangle(grille, palette.surface);
+    try scene.rectangle(grille, palette.faint);
+    var stripe: usize = 0;
+    while (stripe < 24) : (stripe += 1) {
+        const x = grille.left + grille.width * @as(f32, @floatFromInt(stripe)) / 23.0;
+        try scene.line(.{ x, grille.bottom }, .{ x + 0.035, grille.top() }, if (stripe % 2 == 0) palette.faint else palette.board_b);
+    }
+    const badge = Bounds{ .left = grille.left + grille.width * 0.40, .bottom = grille.bottom + grille.height * 0.32, .width = grille.width * 0.20, .height = grille.height * 0.38 };
+    try scene.fillRectangle(badge, Color{ .r = 0.16, .g = 0.055, .b = 0.025 });
+    try scene.rectangle(badge, palette.cable);
+    try drawWave(scene, badge.inset(0.012), palette.bright);
+
+    for ([_][2]f32{
+        .{ shell.left + 0.025, shell.bottom + 0.025 },
+        .{ shell.right() - 0.025, shell.bottom + 0.025 },
+        .{ shell.left + 0.025, shell.top() - 0.025 },
+        .{ shell.right() - 0.025, shell.top() - 0.025 },
+    }) |screw| try scene.circle(screw, 0.008, palette.bright);
+}
+
+fn drawAmplifierViewBar(scene: *Scene, bounds: Bounds) !void {
+    try scene.fillRectangle(bounds, palette.chrome);
+    try scene.line(.{ bounds.left, bounds.top() }, .{ bounds.right(), bounds.top() }, palette.faint);
+
+    const back = Bounds{ .left = bounds.left + 0.015, .bottom = bounds.bottom + 0.012, .width = 0.080, .height = bounds.height - 0.024 };
+    try scene.fillRectangle(back, palette.surface);
+    try scene.rectangle(back, palette.amber);
+    try scene.line(.{ back.left + 0.052, back.bottom + 0.012 }, .{ back.left + 0.025, back.center()[1] }, palette.bright);
+    try scene.line(.{ back.left + 0.025, back.center()[1] }, .{ back.left + 0.052, back.top() - 0.012 }, palette.bright);
+    try scene.addHitRegion(back, .show_rig);
+
+    const selection = Bounds{ .left = back.right() + 0.020, .bottom = back.bottom, .width = 0.44, .height = back.height };
+    try scene.fillRectangle(selection, palette.surface);
+    try scene.rectangle(selection, palette.faint);
+    try scene.circle(.{ selection.left + 0.030, selection.center()[1] }, 0.012, palette.amber);
+    try scene.line(.{ selection.left + 0.060, selection.center()[1] }, .{ selection.right() - 0.025, selection.center()[1] }, palette.mid);
+}
+
+fn drawAmplifierBrowser(scene: *Scene, bounds: Bounds) !void {
+    try scene.fillRectangle(bounds, palette.chrome);
+    try scene.rectangle(bounds, palette.faint);
+
+    const search = Bounds{ .left = bounds.left + 0.018, .bottom = bounds.top() - 0.10, .width = bounds.width - 0.036, .height = 0.065 };
+    try scene.fillRectangle(search, palette.surface);
+    try scene.rectangle(search, palette.faint);
+    try scene.circle(.{ search.left + 0.028, search.center()[1] }, 0.013, palette.mid);
+    try scene.line(.{ search.left + 0.038, search.bottom + 0.022 }, .{ search.left + 0.052, search.bottom + 0.009 }, palette.mid);
+    try scene.line(.{ search.left + 0.073, search.center()[1] }, .{ search.right() - 0.018, search.center()[1] }, palette.faint);
+
+    const tabs = Bounds{ .left = search.left, .bottom = search.bottom - 0.075, .width = search.width, .height = 0.055 };
+    try scene.fillRectangle(tabs, palette.surface);
+    try scene.rectangle(tabs, palette.amber);
+    try scene.line(.{ tabs.center()[0], tabs.bottom }, .{ tabs.center()[0], tabs.top() }, palette.faint);
+
+    const grid_top = tabs.bottom - 0.030;
+    const columns = 2;
+    const rows = 5;
+    const cell_width = (bounds.width - 0.055) / columns;
+    const cell_height: f32 = 0.195;
+    var row: usize = 0;
+    while (row < rows) : (row += 1) {
+        var column: usize = 0;
+        while (column < columns) : (column += 1) {
+            const item = row * columns + column;
+            const cell = Bounds{
+                .left = bounds.left + 0.020 + @as(f32, @floatFromInt(column)) * cell_width,
+                .bottom = grid_top - @as(f32, @floatFromInt(row + 1)) * cell_height,
+                .width = cell_width - 0.010,
+                .height = cell_height - 0.012,
+            };
+            try scene.rectangle(cell, if (item == 2) palette.amber else palette.faint);
+            const head = Bounds{ .left = cell.left + 0.020, .bottom = cell.bottom + 0.065, .width = cell.width - 0.040, .height = 0.065 };
+            try drawMiniAmplifier(scene, head, 5 - item % 2, item == 2);
+            try scene.line(.{ cell.left + 0.025, cell.bottom + 0.030 }, .{ cell.right() - 0.025, cell.bottom + 0.030 }, if (item == 2) palette.amber else palette.faint);
+        }
+    }
+}
+
+fn drawSignalChain(scene: *Scene, bounds: Bounds, rig: *const demo.Rig, view: ViewState) !void {
     try scene.fillRectangle(bounds, palette.surface);
     try scene.rectangle(bounds, palette.faint);
 
@@ -441,7 +708,8 @@ fn drawSignalChain(scene: *Scene, bounds: Bounds, rig: *const demo.Rig) !void {
 
     const amp = Bounds{ .left = split[0] + 0.09, .bottom = rail_y - 0.16, .width = 0.25, .height = 0.11 };
     const cab = Bounds{ .left = amp.right() + 0.05, .bottom = rail_y - 0.17, .width = 0.13, .height = 0.13 };
-    try drawMiniAmplifier(scene, amp, rig.amplifier.controls.len);
+    try drawMiniAmplifier(scene, amp, rig.amplifier.controls.len, view == .amplifier);
+    if (view == .rig) try scene.addHitRegion(amp, .show_amplifier);
     try drawMiniCabinet(scene, cab, rig.cabinet.speaker_count);
     try scene.line(split, .{ split[0] + 0.045, split[1] }, palette.cable);
     try scene.line(.{ split[0] + 0.045, split[1] }, .{ split[0] + 0.045, amp.top() - 0.025 }, palette.cable);
@@ -451,7 +719,7 @@ fn drawSignalChain(scene: *Scene, bounds: Bounds, rig: *const demo.Rig) !void {
 
     const alternate_amp = Bounds{ .left = amp.left + 0.02, .bottom = rail_y + 0.13, .width = 0.20, .height = 0.09 };
     const alternate_cab = Bounds{ .left = alternate_amp.right() + 0.05, .bottom = rail_y + 0.11, .width = 0.11, .height = 0.12 };
-    try drawMiniAmplifier(scene, alternate_amp, 4);
+    try drawMiniAmplifier(scene, alternate_amp, 4, false);
     try drawMiniCabinet(scene, alternate_cab, 1);
     try scene.line(split, .{ split[0] + 0.045, split[1] }, palette.cable);
     try scene.line(.{ split[0] + 0.045, split[1] }, .{ split[0] + 0.045, alternate_amp.bottom + 0.025 }, palette.cable);
@@ -472,9 +740,10 @@ fn drawMiniPedal(scene: *Scene, bounds: Bounds, accent: Color, selected: bool) !
     try scene.circle(.{ bounds.left + bounds.width * 0.5, bounds.bottom + 0.022 }, 0.013, palette.bright);
 }
 
-fn drawMiniAmplifier(scene: *Scene, bounds: Bounds, control_count: usize) !void {
+fn drawMiniAmplifier(scene: *Scene, bounds: Bounds, control_count: usize, selected: bool) !void {
     try scene.fillRectangle(bounds, Color{ .r = 0.10, .g = 0.065, .b = 0.025 });
-    try scene.rectangle(bounds, palette.cable);
+    try scene.rectangle(bounds, if (selected) palette.bright else palette.cable);
+    if (selected) try scene.rectangle(bounds.inset(0.006), palette.amber);
     try scene.rectangle(bounds.inset(0.010), palette.faint);
     const count = @min(control_count, 8);
     for (0..count) |index| {
@@ -688,6 +957,29 @@ test "semantic rig projects to finite layered geometry" {
     for (scene.fills()) |item| {
         try expectFiniteVertex(item);
     }
+}
+
+test "amplifier hit region drives focused view and back navigation" {
+    var scene = Scene{};
+    var state: ViewState = .rig;
+    try projectView(&scene, &demo.rig, state);
+
+    var amplifier_hit: ?HitRegion = null;
+    for (scene.hits()) |hit| {
+        if (hit.action == .show_amplifier) amplifier_hit = hit;
+    }
+    const amp = amplifier_hit orelse return error.MissingAmplifierHitRegion;
+    try std.testing.expect(activate(&scene, &state, .{ (amp.left + amp.right) * 0.5, (amp.bottom + amp.top) * 0.5 }));
+    try std.testing.expectEqual(ViewState.amplifier, state);
+
+    try projectView(&scene, &demo.rig, state);
+    var back_hit: ?HitRegion = null;
+    for (scene.hits()) |hit| {
+        if (hit.action == .show_rig) back_hit = hit;
+    }
+    const back = back_hit orelse return error.MissingRigHitRegion;
+    try std.testing.expect(activate(&scene, &state, .{ (back.left + back.right) * 0.5, (back.bottom + back.top) * 0.5 }));
+    try std.testing.expectEqual(ViewState.rig, state);
 }
 
 fn expectFiniteVertex(item: Vertex) !void {

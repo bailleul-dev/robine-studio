@@ -61,6 +61,9 @@ The initial semantic interactions include:
 - Move a microphone using speaker-relative radial position, distance, and angle.
 - Toggle visibility of internal wiring, external routing, and connection paths.
 
+Focused equipment navigation follows UI-005. Picking an amplifier in a rig emits
+a semantic focus action; platform code does not decide which view to construct.
+
 The UI submits typed model actions and displays validation failures. It MUST NOT
 edit assembly transforms or connectivity edges directly.
 

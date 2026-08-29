@@ -24,15 +24,29 @@ pub const Options = struct {
     height: u32,
     line_vertices: []const wireframe.Vertex,
     fill_vertices: []const wireframe.Vertex,
+    interaction: ?Interaction = null,
+};
+
+pub const Geometry = struct {
+    line_vertices: []const wireframe.Vertex,
+    fill_vertices: []const wireframe.Vertex,
+};
+
+pub const Interaction = struct {
+    context: *anyopaque,
+    pointer_down: *const fn (context: *anyopaque, point: [2]f32) bool,
+    geometry: *const fn (context: *anyopaque) Geometry,
 };
 
 const RenderState = struct {
+    device: Object,
     command_queue: Object,
     pipeline: Object,
     line_buffer: Object,
     fill_buffer: Object,
     line_count: usize,
     fill_count: usize,
+    interaction: ?Interaction,
 };
 
 var render_state: ?RenderState = null;
@@ -104,12 +118,14 @@ pub fn run(options: Options) !void {
         0,
     );
     render_state = .{
+        .device = device,
         .command_queue = command_queue,
         .pipeline = pipeline,
         .line_buffer = line_buffer,
         .fill_buffer = fill_buffer,
         .line_count = options.line_vertices.len,
         .fill_count = options.fill_vertices.len,
+        .interaction = options.interaction,
     };
     defer render_state = null;
 
@@ -118,7 +134,8 @@ pub fn run(options: Options) !void {
         .size = .{ .width = @floatFromInt(options.width), .height = @floatFromInt(options.height) },
     };
 
-    const view_alloc = try send0(Object, try classNamed("MTKView"), "alloc");
+    const view_class = try makeViewClass();
+    const view_alloc = try send0(Object, view_class, "alloc");
     const view = try send2(Object, Rect, Object, view_alloc, "initWithFrame:device:", frame, device);
     try send1(void, usize, view, "setColorPixelFormat:", 80);
     try send1(void, ClearColor, view, "setClearColor:", .{
@@ -189,6 +206,20 @@ fn makeDelegateClass() !Object {
     return subclass_object;
 }
 
+fn makeViewClass() !Object {
+    if (objc_getClass("RobineStudioView")) |existing| return existing;
+
+    const super_object = objc_getClass("MTKView") orelse return error.ObjectiveCClassMissing;
+    const subclass_object = objc_allocateClassPair(@ptrCast(super_object), "RobineStudioView", 0) orelse return error.ObjectiveCClassCreationFailed;
+    const subclass: Class = @ptrCast(subclass_object);
+
+    if (!class_addMethod(subclass, sel_registerName("mouseDown:"), @ptrCast(&mouseDown), "v@:@"))
+        return error.ObjectiveCMethodCreationFailed;
+
+    objc_registerClassPair(subclass);
+    return subclass_object;
+}
+
 fn drawInMTKView(_: Object, _: Selector, view: Object) callconv(.c) void {
     draw(view) catch |err| std.log.err("Metal frame failed: {s}", .{@errorName(err)});
 }
@@ -197,6 +228,53 @@ fn drawableSizeChanged(_: Object, _: Selector, _: Object, _: Size) callconv(.c) 
 
 fn terminateAfterLastWindow(_: Object, _: Selector, _: Object) callconv(.c) i8 {
     return 1;
+}
+
+fn mouseDown(view: Object, _: Selector, event: Object) callconv(.c) void {
+    handlePointerDown(view, event) catch |err| std.log.err("Pointer interaction failed: {s}", .{@errorName(err)});
+}
+
+fn handlePointerDown(view: Object, event: Object) !void {
+    if (render_state) |*state| {
+        const interaction = state.interaction orelse return;
+        const window_point = try send0(Point, event, "locationInWindow");
+        const local_point = try send2(Point, Point, Object, view, "convertPoint:fromView:", window_point, null);
+        const bounds = try send0(Rect, view, "bounds");
+        if (bounds.size.width <= 0 or bounds.size.height <= 0) return;
+        const point = [2]f32{
+            @floatCast(local_point.x / bounds.size.width * 2.0 - 1.0),
+            @floatCast(local_point.y / bounds.size.height * 2.0 - 1.0),
+        };
+        if (!interaction.pointer_down(interaction.context, point)) return;
+        try replaceGeometry(state, interaction.geometry(interaction.context));
+    }
+}
+
+fn replaceGeometry(state: *RenderState, geometry: Geometry) !void {
+    const new_line_buffer = try createVertexBuffer(state.device, geometry.line_vertices);
+    errdefer send0(void, new_line_buffer, "release") catch {};
+    const new_fill_buffer = try createVertexBuffer(state.device, geometry.fill_vertices);
+
+    try send0(void, state.line_buffer, "release");
+    try send0(void, state.fill_buffer, "release");
+    state.line_buffer = new_line_buffer;
+    state.fill_buffer = new_fill_buffer;
+    state.line_count = geometry.line_vertices.len;
+    state.fill_count = geometry.fill_vertices.len;
+}
+
+fn createVertexBuffer(device: Object, vertices: []const wireframe.Vertex) !Object {
+    return send3(
+        Object,
+        *const anyopaque,
+        usize,
+        usize,
+        device,
+        "newBufferWithBytes:length:options:",
+        @ptrCast(vertices.ptr),
+        vertices.len * @sizeOf(wireframe.Vertex),
+        0,
+    );
 }
 
 fn draw(view: Object) !void {

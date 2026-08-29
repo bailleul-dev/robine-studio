@@ -83,6 +83,8 @@ replace the electrical connection graph.
 ## External cables and jacks
 
 - Jacks expose sockets and conductor mappings.
+- Jack mounting uses the semantic surfaces and slots defined by MOD-005; it is
+  independent from the pedal form factor.
 - Cables expose plug endpoints and conductors.
 - Insertion creates conductor connections only after compatibility validation.
 - Removing a plug removes those connections but does not delete the cable.
@@ -126,4 +128,3 @@ incompatibility, missing routing, and incomplete connectivity.
 - Disconnecting a plug updates the external graph and visible cable state.
 - A cabinet and microphone placement produce an inspectable acoustic relationship.
 - No wire or cable requires product-authored render coordinates.
-
