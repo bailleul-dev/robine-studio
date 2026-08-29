@@ -35,7 +35,7 @@ pub const studio_profile = ViewProfile{
 };
 
 pub const Mesh = struct {
-    pub const max_vertices = 64_000;
+    pub const max_vertices = 80_000;
     pub const max_emissive_lights = 16;
 
     vertices: [max_vertices]Vertex = undefined,
@@ -75,7 +75,7 @@ const materials = struct {
     const chrome = Material{ .base_color = .{ 0.48, 0.52, 0.50 }, .roughness = 0.14, .metallic = 1.0 };
     const polished_chrome = Material{ .base_color = .{ 0.76, 0.80, 0.78 }, .roughness = 0.055, .metallic = 1.0 };
     const knob_plastic = Material{ .base_color = .{ 0.018, 0.022, 0.021 }, .roughness = 0.28, .metallic = 0.04 };
-    const knob_indicator = Material{ .base_color = .{ 0.94, 0.77, 0.38 }, .roughness = 0.34, .metallic = 0.02 };
+    const knob_indicator = Material{ .base_color = .{ 0.92, 0.84, 0.58 }, .roughness = 0.34, .metallic = 0.02 };
     const rubber = Material{ .base_color = .{ 0.012, 0.015, 0.014 }, .roughness = 0.78, .metallic = 0.0 };
     const pcb = Material{ .base_color = .{ 0.025, 0.19, 0.105 }, .roughness = 0.38, .metallic = 0.08 };
     const pointer = Material{ .base_color = .{ 0.95, 0.67, 0.18 }, .roughness = 0.28, .metallic = 0.30 };
@@ -228,32 +228,63 @@ fn addFootswitches(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !
 fn addChickenHeadKnob(mesh: *Mesh, origin: [3]f32, radius: f32, angle: f32) !void {
     const direction = [3]f32{ @sin(angle), 0, -@cos(angle) };
     const perpendicular = [3]f32{ @cos(angle), 0, @sin(angle) };
-    try addCylinder(mesh, .{ origin[0], origin[1] + 0.065, origin[2] }, radius * 1.18, 0.13, materials.knob_plastic, .y);
-    try addCylinder(mesh, .{ origin[0], origin[1] + 0.145, origin[2] }, radius * 0.72, 0.16, materials.knob_plastic, .y);
+    const skirt_profile = [_]LatheRing{
+        .{ .height = 0.00, .radius = radius * 1.22 },
+        .{ .height = 0.08, .radius = radius * 1.22 },
+        .{ .height = 0.13, .radius = radius * 1.02 },
+        .{ .height = 0.18, .radius = radius * 0.76 },
+    };
+    try addLathedY(mesh, origin, &skirt_profile, materials.knob_plastic);
+    try addBeveledChickenGrip(mesh, origin, direction, perpendicular, radius);
 
-    const bottom_back_left = knobPoint(origin, direction, perpendicular, -radius * 0.42, -radius * 0.56, 0.12);
-    const bottom_back_right = knobPoint(origin, direction, perpendicular, -radius * 0.42, radius * 0.56, 0.12);
-    const bottom_front_left = knobPoint(origin, direction, perpendicular, radius * 0.96, -radius * 0.34, 0.12);
-    const bottom_front_right = knobPoint(origin, direction, perpendicular, radius * 0.96, radius * 0.34, 0.12);
-    const top_back_left = knobPoint(origin, direction, perpendicular, -radius * 0.30, -radius * 0.45, 0.42);
-    const top_back_right = knobPoint(origin, direction, perpendicular, -radius * 0.30, radius * 0.45, 0.42);
-    const top_front_left = knobPoint(origin, direction, perpendicular, radius * 0.76, -radius * 0.25, 0.42);
-    const top_front_right = knobPoint(origin, direction, perpendicular, radius * 0.76, radius * 0.25, 0.42);
+    const stripe_center = knobPoint(origin, direction, perpendicular, radius * 0.22, 0, 0.512);
+    try addOrientedBox(mesh, stripe_center, direction, perpendicular, radius * 0.060, radius * 0.48, 0.018, materials.knob_indicator);
 
-    try addQuadAutoNormal(mesh, top_back_left, top_back_right, top_front_right, top_front_left, materials.knob_plastic);
-    try addQuadAutoNormal(mesh, bottom_back_left, top_back_left, top_front_left, bottom_front_left, materials.knob_plastic);
-    try addQuadAutoNormal(mesh, bottom_front_right, top_front_right, top_back_right, bottom_back_right, materials.knob_plastic);
-    try addQuadAutoNormal(mesh, bottom_back_right, top_back_right, top_back_left, bottom_back_left, materials.knob_plastic);
-    try addQuadAutoNormal(mesh, bottom_front_left, top_front_left, top_front_right, bottom_front_right, materials.knob_plastic);
-
-    const stripe_center = knobPoint(origin, direction, perpendicular, radius * 0.24, 0, 0.431);
-    try addOrientedBox(mesh, stripe_center, direction, perpendicular, radius * 0.055, radius * 0.43, 0.018, materials.knob_indicator);
-
-    const stripe_top_left = knobPoint(origin, direction, perpendicular, radius * 0.775, -radius * 0.055, 0.405);
-    const stripe_top_right = knobPoint(origin, direction, perpendicular, radius * 0.775, radius * 0.055, 0.405);
-    const stripe_bottom_right = knobPoint(origin, direction, perpendicular, radius * 0.955, radius * 0.055, 0.17);
-    const stripe_bottom_left = knobPoint(origin, direction, perpendicular, radius * 0.955, -radius * 0.055, 0.17);
+    const stripe_top_left = knobPoint(origin, direction, perpendicular, radius * 0.728, -radius * 0.060, 0.475);
+    const stripe_top_right = knobPoint(origin, direction, perpendicular, radius * 0.728, radius * 0.060, 0.475);
+    const stripe_bottom_right = knobPoint(origin, direction, perpendicular, radius * 0.728, radius * 0.060, 0.18);
+    const stripe_bottom_left = knobPoint(origin, direction, perpendicular, radius * 0.728, -radius * 0.060, 0.18);
     try addQuad(mesh, stripe_top_left, stripe_bottom_left, stripe_bottom_right, stripe_top_right, direction, materials.knob_indicator);
+}
+
+fn addBeveledChickenGrip(mesh: *Mesh, origin: [3]f32, direction: [3]f32, perpendicular: [3]f32, radius: f32) !void {
+    const footprint = [_][2]f32{
+        .{ -0.52, -0.30 },
+        .{ -0.40, -0.44 },
+        .{ 0.50, -0.44 },
+        .{ 0.72, -0.28 },
+        .{ 0.72, 0.28 },
+        .{ 0.50, 0.44 },
+        .{ -0.40, 0.44 },
+        .{ -0.52, 0.30 },
+    };
+    const lower_height: f32 = 0.12;
+    const shoulder_height: f32 = 0.43;
+    const top_height: f32 = 0.50;
+    const top_scale: f32 = 0.86;
+
+    for (0..footprint.len) |index| {
+        const next = (index + 1) % footprint.len;
+        const lower0 = knobPoint(origin, direction, perpendicular, footprint[index][0] * radius, footprint[index][1] * radius, lower_height);
+        const lower1 = knobPoint(origin, direction, perpendicular, footprint[next][0] * radius, footprint[next][1] * radius, lower_height);
+        const shoulder0 = knobPoint(origin, direction, perpendicular, footprint[index][0] * radius, footprint[index][1] * radius, shoulder_height);
+        const shoulder1 = knobPoint(origin, direction, perpendicular, footprint[next][0] * radius, footprint[next][1] * radius, shoulder_height);
+        const top0 = knobPoint(origin, direction, perpendicular, footprint[index][0] * radius * top_scale, footprint[index][1] * radius * top_scale, top_height);
+        const top1 = knobPoint(origin, direction, perpendicular, footprint[next][0] * radius * top_scale, footprint[next][1] * radius * top_scale, top_height);
+        const edge = [3]f32{ lower1[0] - lower0[0], 0, lower1[2] - lower0[2] };
+        const outward = normalized3(.{ edge[2], 0, -edge[0] });
+        const bevel_normal = normalized3(.{ outward[0] * 0.68, 0.74, outward[2] * 0.68 });
+        try addSmoothQuad(mesh, lower0, lower1, shoulder1, shoulder0, outward, outward, outward, outward, materials.knob_plastic);
+        try addSmoothQuad(mesh, shoulder0, shoulder1, top1, top0, bevel_normal, bevel_normal, bevel_normal, bevel_normal, materials.knob_plastic);
+    }
+
+    const top_center = [3]f32{ origin[0], origin[1] + top_height, origin[2] };
+    for (0..footprint.len) |index| {
+        const next = (index + 1) % footprint.len;
+        const top0 = knobPoint(origin, direction, perpendicular, footprint[index][0] * radius * top_scale, footprint[index][1] * radius * top_scale, top_height);
+        const top1 = knobPoint(origin, direction, perpendicular, footprint[next][0] * radius * top_scale, footprint[next][1] * radius * top_scale, top_height);
+        try mesh.triangle(vertex(top_center, .{ 0, 1, 0 }, materials.knob_plastic), vertex(top1, .{ 0, 1, 0 }, materials.knob_plastic), vertex(top0, .{ 0, 1, 0 }, materials.knob_plastic));
+    }
 }
 
 fn addFootswitchHardware(mesh: *Mesh, origin: [3]f32) !void {
