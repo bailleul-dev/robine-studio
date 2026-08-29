@@ -28,15 +28,15 @@ pub const ViewProfile = struct {
 };
 
 pub const studio_profile = ViewProfile{
-    .camera = .{ 7.5, 13.0, 0 },
-    .target = .{ -14.5, 1.55, 0 },
-    .field_of_view_degrees = 47.0,
-    .key_position = .{ -15.5, 9.5, -7.0 },
-    .key_size = .{ 1.20, 1.55 },
-    .key_intensity = 250.0,
-    .exposure = 1.24,
-    .environment_strength = 0.86,
-    .fill_radiance = .{ 0.36, 0.39, 0.36 },
+    .camera = .{ 5.0, 9.2, 5.8 },
+    .target = .{ -14.3, 1.45, 0.3 },
+    .field_of_view_degrees = 42.0,
+    .key_position = .{ 5.5, 10.5, -13.5 },
+    .key_size = .{ 2.40, 3.20 },
+    .key_intensity = 1_250.0,
+    .exposure = 1.28,
+    .environment_strength = 0.92,
+    .fill_radiance = .{ 0.22, 0.30, 0.40 },
 };
 
 pub const CameraPose = struct {
@@ -147,6 +147,9 @@ const materials = struct {
     const middle_ridge = Material{ .base_color = .{ 0.075, 0.135, 0.105 }, .roughness = 0.96, .metallic = 0.0, .emissive = 0.055 };
     const valley = Material{ .base_color = .{ 0.055, 0.105, 0.060 }, .roughness = 0.94, .metallic = 0.0, .emissive = 0.025 };
     const sun = Material{ .base_color = .{ 1.0, 0.64, 0.24 }, .roughness = 0.30, .metallic = 0.0, .emissive = 4.0 };
+    const rug_base = Material{ .base_color = .{ 0.105, 0.022, 0.028 }, .roughness = 0.98, .metallic = 0.0 };
+    const rug_border = Material{ .base_color = .{ 0.47, 0.245, 0.075 }, .roughness = 0.90, .metallic = 0.01 };
+    const rug_detail = Material{ .base_color = .{ 0.055, 0.115, 0.105 }, .roughness = 0.96, .metallic = 0.0 };
 };
 
 const Axis = enum { x, y, z };
@@ -398,12 +401,44 @@ fn addStudioRoom(mesh: *Mesh) !void {
     try addBox(mesh, .{ -side_x + 0.15, floor_top + 0.18, side_center_z }, .{ 0.16, 0.34, side_depth - 0.2 }, materials.studio_wall_trim);
     try addBox(mesh, .{ side_x - 0.15, floor_top + 0.18, side_center_z }, .{ 0.16, 0.34, side_depth - 0.2 }, materials.studio_wall_trim);
 
+    try addStudioRug(mesh);
+    try addLeftWallAcousticPanel(mesh, -7.6, 4.6, 5.8);
+    try addLeftWallAcousticPanel(mesh, 7.6, 4.6, 5.8);
+    try addSideWoodSconce(mesh, .{ -side_x + 0.30, 3.25, -4.65 }, true);
+    try addSideWoodSconce(mesh, .{ -side_x + 0.30, 3.25, 4.65 }, true);
+
     try addWindowWall(mesh, back_z, window_bottom, window_top, window_half_width);
     try addOverlookLandscape(mesh, back_z);
 
     // Keep the familiar warm sconces on the solid outer piers.
     try addWoodWallSconce(mesh, .{ -19.22, 2.15, back_z + 0.26 });
     try addWoodWallSconce(mesh, .{ 19.22, 2.15, back_z + 0.26 });
+}
+
+fn addStudioRug(mesh: *Mesh) !void {
+    const center = [3]f32{ -15.15, 0.315, 0 };
+    const size = [3]f32{ 11.8, 0.055, 12.4 };
+    try addBox(mesh, center, size, materials.rug_base);
+    const top_y = center[1] + size[1] * 0.5 + 0.012;
+    const border: f32 = 0.24;
+    try addBox(mesh, .{ center[0] - size[0] * 0.5 + border * 0.5, top_y, center[2] }, .{ border, 0.026, size[2] - 0.30 }, materials.rug_border);
+    try addBox(mesh, .{ center[0] + size[0] * 0.5 - border * 0.5, top_y, center[2] }, .{ border, 0.026, size[2] - 0.30 }, materials.rug_border);
+    try addBox(mesh, .{ center[0], top_y, center[2] - size[2] * 0.5 + border * 0.5 }, .{ size[0] - 0.30, 0.026, border }, materials.rug_border);
+    try addBox(mesh, .{ center[0], top_y, center[2] + size[2] * 0.5 - border * 0.5 }, .{ size[0] - 0.30, 0.026, border }, materials.rug_border);
+    try addCylinder(mesh, .{ center[0], top_y + 0.018, center[2] }, 1.48, 0.036, materials.rug_detail, .y);
+    try addCylinder(mesh, .{ center[0], top_y + 0.040, center[2] }, 0.82, 0.020, materials.rug_border, .y);
+}
+
+fn addLeftWallAcousticPanel(mesh: *Mesh, z: f32, width: f32, height: f32) !void {
+    const wall_x: f32 = -20.96;
+    const center_y: f32 = 3.55;
+    try addBox(mesh, .{ wall_x + 0.20, center_y, z }, .{ 0.22, height, width }, materials.acoustic_panel);
+    const slat_count: usize = 14;
+    for (0..slat_count) |index| {
+        const slat_z = z - width * 0.5 + (@as(f32, @floatFromInt(index)) + 0.5) * width /
+            @as(f32, @floatFromInt(slat_count));
+        try addBox(mesh, .{ wall_x + 0.335, center_y, slat_z }, .{ 0.075, height * 0.94, 0.085 }, materials.acoustic_slats);
+    }
 }
 
 fn addWindowWall(mesh: *Mesh, back_z: f32, bottom: f32, top: f32, half_width: f32) !void {
@@ -491,6 +526,22 @@ fn addSideWoodSconce(mesh: *Mesh, center: [3]f32, left: bool) !void {
     try addOrientedBox(mesh, center, direction, perpendicular, 0.81, 0.19, 1.62, materials.sconce_oak);
     try addOrientedBox(mesh, .{ center[0], center[1] + 0.84, center[2] }, direction, perpendicular, 0.65, 0.22, 0.10, materials.lamp_warm);
     try addOrientedBox(mesh, .{ center[0], center[1] - 0.84, center[2] }, direction, perpendicular, 0.65, 0.22, 0.10, materials.lamp_warm);
+    try mesh.addEmissiveLight(.{
+        .position = .{ center[0] + direction[0] * 0.48, center[1] + 0.98, center[2] },
+        .radius = 6.8,
+        .color = .{ 1.0, 0.64, 0.32 },
+        .intensity = 3.2,
+        .direction = .{ direction[0] * 0.64, 0.77, direction[2] * 0.64 },
+        .cone_cosine = 0.62,
+    });
+    try mesh.addEmissiveLight(.{
+        .position = .{ center[0] + direction[0] * 0.48, center[1] - 0.98, center[2] },
+        .radius = 6.0,
+        .color = .{ 1.0, 0.56, 0.26 },
+        .intensity = 2.6,
+        .direction = .{ direction[0] * 0.64, -0.77, direction[2] * 0.64 },
+        .cone_cosine = 0.62,
+    });
 }
 
 fn addAcousticPanel(mesh: *Mesh, x: f32, y: f32, z: f32, width: f32, height: f32) !void {
@@ -1420,7 +1471,7 @@ test "semantic pedalboard produces bounded 3D geometry" {
     try build(&mesh, &demo.rig, .{});
     try std.testing.expect(mesh.len > 30_000);
     try std.testing.expect(mesh.len < Mesh.max_vertices);
-    try std.testing.expectEqual(@as(usize, 10), mesh.emissiveLights().len);
+    try std.testing.expectEqual(@as(usize, 14), mesh.emissiveLights().len);
     try std.testing.expectEqual(@as(usize, 0), mesh.len % 3);
     for (mesh.items()) |item| {
         for (item.position) |value| try std.testing.expect(std.math.isFinite(value));
@@ -1478,17 +1529,19 @@ test "disabled first pedal keeps its LED geometry but removes emission" {
     var mesh = Mesh{};
     const enabled = [_]bool{false};
     try build(&mesh, &demo.rig, .{ .pedal_enabled = &enabled });
-    try std.testing.expectEqual(@as(f32, 0.0), mesh.emissiveLights()[4].intensity);
+    const pedal_light_start = mesh.emissiveLights().len - 6;
+    try std.testing.expectEqual(@as(f32, 0.0), mesh.emissiveLights()[pedal_light_start].intensity);
 }
 
 test "dual pedal footswitch mask controls each LED independently" {
     var mesh = Mesh{};
     const masks = [_]u8{ 1, 0, 0, 1, 0 };
     try build(&mesh, &demo.rig, .{ .pedal_footswitch_masks = &masks });
-    try std.testing.expect(mesh.emissiveLights()[7].intensity > 0);
-    try std.testing.expectEqual(@as(f32, 0.0), mesh.emissiveLights()[8].intensity);
-    try std.testing.expectEqual(@as([3]f32, .{ 1.0, 0.34, 0.008 }), mesh.emissiveLights()[7].color);
-    try std.testing.expectEqual(@as([3]f32, .{ 1.0, 0.018, 0.006 }), mesh.emissiveLights()[8].color);
+    const pedal_light_start = mesh.emissiveLights().len - 6;
+    try std.testing.expect(mesh.emissiveLights()[pedal_light_start + 3].intensity > 0);
+    try std.testing.expectEqual(@as(f32, 0.0), mesh.emissiveLights()[pedal_light_start + 4].intensity);
+    try std.testing.expectEqual(@as([3]f32, .{ 1.0, 0.34, 0.008 }), mesh.emissiveLights()[pedal_light_start + 3].color);
+    try std.testing.expectEqual(@as([3]f32, .{ 1.0, 0.018, 0.006 }), mesh.emissiveLights()[pedal_light_start + 4].color);
 }
 
 test "effects-loop pedals occupy a centered row behind the input chain" {

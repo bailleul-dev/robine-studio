@@ -29,6 +29,9 @@ The initial projection contains:
 - The complete equipment rig is quarter-turned toward the left wall: the combo
   sits back against that wall and faces the room, while both pedal rows retain
   their local signal-order layout in front of it.
+- A dark woven rug, paired acoustic-slat panels, and four practical sconce cones
+  anchor the left-wall rig as the visual subject of a cinematic three-quarter
+  composition.
 - Square oak wall sconces with concealed upper and lower emitters. Their visible
   warm washes use bounded runtime spot cones rather than baked wall gradients.
 - Gently rounded enclosures sized from `PedalEnclosure.dimensions` in millimetres.
@@ -86,6 +89,9 @@ that model is introduced.
 - Camera, key-light position and size, key intensity, exposure, environment
   strength, and fill radiance belong to one declarative `ViewProfile` in `ui`.
   The Metal backend consumes this profile and does not own product-view tuning.
+- The default profile uses a broad warm window key and restrained cool fill;
+  practical sconces motivate the warmer wall pools without flattening pedal
+  reflections.
 - Equipment geometry and shadow geometry share the same vertex stream.
 - The production rig view dedicates the complete window to the 3D scene. It has
   no persistent toolbar, contextual strip, transport, browser, or signal-flow
