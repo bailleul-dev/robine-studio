@@ -36,7 +36,7 @@ recommended behavior, and optional behavior respectively.
 | [UI-008](ui/ui-008-emissive-indicators.md) | UI | Draft | HDR pedal LEDs with bounded local light spill |
 | [UI-009](ui/ui-009-pedal-control-hardware.md) | UI | Draft | Procedural chicken-head knobs and metal footswitches |
 | [UI-010](ui/ui-010-progressive-idle-ray-tracing.md) | UI | Draft | Continuous ray-traced contact shading during static and moving equipment views |
-| [UI-011](ui/ui-011-studio-chrome-and-context-controls.md) | UI | Draft | Persistent toolbar, contextual equipment strip, transport, and visual hierarchy |
+| [UI-011](ui/ui-011-studio-chrome-and-context-controls.md) | UI | Superseded | Removed persistent toolbar, contextual strip, and transport |
 | [STU-001](studio/stu-001-rendering-engine-mvp.md) | Studio | Draft | Initial equipment-modeling and rendering milestone |
 | [AUD-001](audio/aud-001-audio-integration-boundary.md) | Audio | Draft | Real-time audio subsystem boundary |
 | [AUD-002](audio/aud-002-native-audio-backends.md) | Audio | Draft | Core Audio, ASIO, PipeWire, and ALSA transport contract |

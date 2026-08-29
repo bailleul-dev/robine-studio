@@ -78,9 +78,9 @@ that model is introduced.
   strength, and fill radiance belong to one declarative `ViewProfile` in `ui`.
   The Metal backend consumes this profile and does not own product-view tuning.
 - Equipment geometry and shadow geometry share the same vertex stream.
-- The production rig view dedicates the complete area between toolbar, slot bar,
-  and transport to the 3D scene. It has no persistent browser or signal-flow
-  panel. Remaining screen-space controls render after the 3D pass.
+- The production rig view dedicates the complete window to the 3D scene. It has
+  no persistent toolbar, contextual strip, transport, browser, or signal-flow
+  panel.
 - The renderer MUST allocate no geometry during a steady-state frame.
 
 ## Acceptance criteria

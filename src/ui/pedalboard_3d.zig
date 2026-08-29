@@ -58,10 +58,10 @@ pub const amplifier_camera = CameraPose{
 };
 
 pub const studio_viewport = struct {
-    pub const left: f32 = 0.01;
-    pub const top: f32 = 0.08;
-    pub const width: f32 = 0.98;
-    pub const height: f32 = 0.80;
+    pub const left: f32 = 0.0;
+    pub const top: f32 = 0.0;
+    pub const width: f32 = 1.0;
+    pub const height: f32 = 1.0;
 };
 
 pub const BuildState = struct {

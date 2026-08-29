@@ -657,28 +657,8 @@ pub fn run(options: Options) !void {
     const pipeline = try createWireframePipeline(device, library, sample_count);
     const lab_render_state = try createLightingLabRenderState(device, library, sample_count);
     const command_queue = try send0(Object, device, "newCommandQueue");
-    const line_buffer = try send3(
-        Object,
-        *const anyopaque,
-        usize,
-        usize,
-        device,
-        "newBufferWithBytes:length:options:",
-        @ptrCast(options.line_vertices.ptr),
-        options.line_vertices.len * @sizeOf(wireframe.Vertex),
-        0,
-    );
-    const fill_buffer = try send3(
-        Object,
-        *const anyopaque,
-        usize,
-        usize,
-        device,
-        "newBufferWithBytes:length:options:",
-        @ptrCast(options.fill_vertices.ptr),
-        options.fill_vertices.len * @sizeOf(wireframe.Vertex),
-        0,
-    );
+    const line_buffer = try createVertexBuffer(device, options.line_vertices);
+    const fill_buffer = try createVertexBuffer(device, options.fill_vertices);
     const equipment_buffer = try send3(
         Object,
         *const anyopaque,
@@ -1067,6 +1047,17 @@ fn replaceGeometry(state: *RenderState, geometry: Geometry) !void {
 }
 
 fn createVertexBuffer(device: Object, vertices: []const wireframe.Vertex) !Object {
+    if (vertices.len == 0) {
+        return send2(
+            Object,
+            usize,
+            usize,
+            device,
+            "newBufferWithLength:options:",
+            @sizeOf(wireframe.Vertex),
+            0,
+        );
+    }
     return send3(
         Object,
         *const anyopaque,
@@ -1125,10 +1116,10 @@ fn drawState(view: Object, state: *RenderState) !void {
         .z_far = 1,
     };
     const pedalboard_viewport = Viewport{
-        .origin_x = drawable_size.width * 0.01,
-        .origin_y = drawable_size.height * 0.08,
-        .width = drawable_size.width * 0.98,
-        .height = drawable_size.height * 0.80,
+        .origin_x = 0,
+        .origin_y = 0,
+        .width = drawable_size.width,
+        .height = drawable_size.height,
         .z_near = 0,
         .z_far = 1,
     };

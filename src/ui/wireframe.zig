@@ -238,10 +238,7 @@ const Bounds = struct {
 };
 
 const Layout = struct {
-    toolbar: Bounds = .{ .left = -0.98, .bottom = 0.84, .width = 1.96, .height = 0.14 },
-    board: Bounds = .{ .left = -0.98, .bottom = -0.76, .width = 1.96, .height = 1.60 },
-    slot_bar: Bounds = .{ .left = -0.98, .bottom = -0.84, .width = 1.96, .height = 0.08 },
-    transport: Bounds = .{ .left = -0.98, .bottom = -0.98, .width = 1.96, .height = 0.14 },
+    board: Bounds = .{ .left = -1.0, .bottom = -1.0, .width = 2.0, .height = 2.0 },
 };
 
 const palette = struct {
@@ -276,25 +273,14 @@ pub fn projectStudioView(scene: *Scene, rig: *const demo.Rig, view: ViewState, a
     const layout = Layout{};
 
     try scene.fillRectangle(.{ .left = -1, .bottom = -1, .width = 2, .height = 2 }, palette.background);
-    try drawToolbar(scene, layout.toolbar, view, amplifier_focused);
     switch (view) {
-        .rig => {
-            const pedal_bounds = try layoutPedalBounds(layout.board, rig);
-            try drawPedalboard3dFrame(scene, layout.board);
-            if (amplifier_focused)
-                try drawFocusedAmplifierStrip(scene, layout.slot_bar, rig)
-            else
-                try drawSlotBar(scene, layout.slot_bar, pedal_bounds[0..rig.pedals.len], rig.pedals);
-        },
-        .amplifier => {
-            try drawAmplifierView(scene, layout.board, rig);
-            try drawAmplifierViewBar(scene, layout.slot_bar);
-        },
+        .rig => {},
+        .amplifier => try drawAmplifierView(scene, layout.board, rig),
         .lighting_lab => {
             try drawLightingLabFrame(scene);
         },
     }
-    try drawTransport(scene, layout.transport);
+    _ = amplifier_focused;
 }
 
 pub fn activate(scene: *const Scene, state: *ViewState, point: [2]f32) bool {
@@ -1351,11 +1337,12 @@ fn pointOnCircle(center: [2]f32, radius: f32, angle: f32) [2]f32 {
     return .{ center[0] + @cos(angle) * radius, center[1] + @sin(angle) * radius };
 }
 
-test "semantic rig projects to finite layered geometry" {
+test "screen-space projection remains finite without persistent chrome" {
     var scene = Scene{};
     try project(&scene, &demo.rig);
-    try std.testing.expect(scene.line_len > 500);
-    try std.testing.expect(scene.fill_len > 300);
+    try std.testing.expectEqual(@as(usize, 0), scene.line_len);
+    try std.testing.expectEqual(@as(usize, 6), scene.fill_len);
+    try std.testing.expectEqual(@as(usize, 0), scene.hit_len);
     try std.testing.expectEqual(@as(usize, 0), scene.line_len % 2);
     try std.testing.expectEqual(@as(usize, 0), scene.fill_len % 3);
     for (scene.lines()) |item| {
@@ -1387,24 +1374,20 @@ test "physical pedal layout follows the signal chain from right to left" {
 
 test "primary rig layout has no browser or signal-chain panels" {
     const layout = Layout{};
-    try std.testing.expectApproxEqAbs(@as(f32, -0.98), layout.board.left, 0.0001);
-    try std.testing.expectApproxEqAbs(@as(f32, 1.96), layout.board.width, 0.0001);
-    try std.testing.expectApproxEqAbs(@as(f32, -0.76), layout.board.bottom, 0.0001);
-    try std.testing.expectApproxEqAbs(@as(f32, 1.60), layout.board.height, 0.0001);
+    try std.testing.expectApproxEqAbs(@as(f32, -1.0), layout.board.left, 0.0001);
+    try std.testing.expectApproxEqAbs(@as(f32, 2.0), layout.board.width, 0.0001);
+    try std.testing.expectApproxEqAbs(@as(f32, -1.0), layout.board.bottom, 0.0001);
+    try std.testing.expectApproxEqAbs(@as(f32, 2.0), layout.board.height, 0.0001);
 
     var scene = Scene{};
     try projectView(&scene, &demo.rig, .rig);
-    try std.testing.expectEqual(@as(usize, 3), scene.hits().len);
-    try std.testing.expectEqual(Action.show_rig, scene.hits()[0].action);
-    try std.testing.expectEqual(Action.show_amplifier, scene.hits()[1].action);
-    try std.testing.expectEqual(Action.show_lighting_lab, scene.hits()[2].action);
+    try std.testing.expectEqual(@as(usize, 0), scene.hits().len);
 }
 
-test "focused amplifier projection exposes a compact rig return" {
+test "focused amplifier projection adds no persistent controls" {
     var scene = Scene{};
     try projectStudioView(&scene, &demo.rig, .rig, true);
-    try std.testing.expectEqual(@as(usize, 4), scene.hits().len);
-    try std.testing.expectEqual(Action.show_rig, scene.hits()[3].action);
+    try std.testing.expectEqual(@as(usize, 0), scene.hits().len);
 }
 
 fn expectFiniteVertex(item: Vertex) !void {

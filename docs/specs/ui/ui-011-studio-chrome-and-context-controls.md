@@ -1,13 +1,13 @@
 # UI-011: Studio chrome and context controls
 
-Status: Draft
+Status: Superseded
 
 ## Summary
 
-Robine Studio surrounds the equipment viewport with a restrained set of
-persistent controls. The viewport remains the visual hero; chrome establishes
-clear navigation, equipment context, transport state, and metering without
-resembling a diagnostic wireframe.
+This proposal is superseded. Robine Studio uses a full-window equipment scene
+without persistent toolbar, contextual equipment strip, or transport. Future
+controls must be introduced contextually without permanently reducing the 3D
+viewport.
 
 ## Persistent hierarchy
 
