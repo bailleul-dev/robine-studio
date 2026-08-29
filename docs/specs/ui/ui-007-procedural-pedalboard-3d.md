@@ -14,7 +14,7 @@ not provide screen coordinates or renderer-specific triangles.
 The initial projection contains:
 
 - A bounded wooden pedalboard assembled from reusable planks and support rails.
-- Chamfered enclosures sized from `PedalEnclosure.dimensions` in millimetres.
+- Deeply rounded enclosures sized from `PedalEnclosure.dimensions` in millimetres.
 - Layout spacing derived from physical width and bounded semantic gaps.
 - Procedural knobs and pointers generated from the control collection.
 - One or more footswitches generated from `footswitch_count`.
@@ -22,9 +22,13 @@ The initial projection contains:
   MOD-005 mounting data.
 - An open service presentation containing a tray, exposed PCB, components, and
   raised lid when `presentation` is `open`.
-- Rounded enclosure corners use subdivided arcs, while cylindrical controls,
-  sockets, fasteners, and switches use a high-detail radial profile.
+- Rounded enclosure footprints use subdivided arcs. Their upper edges use
+  multiple quarter-circle fillet rings with smooth per-vertex normals rather
+  than a single chamfer. Cylindrical controls, sockets, fasteners, and switches
+  use a high-detail radial profile.
 - Runtime metallic-roughness materials and cast shadows following UI-006.
+- Painted enclosures add a runtime clearcoat response so studio strips produce
+  clean reflections without baking highlights into product assets.
 
 The current demo uses a single compiled triangle stream so the complete board and
 its shadow pass each require one draw call. Future picking IDs and per-instance

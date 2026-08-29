@@ -63,8 +63,11 @@ and serializable. Equipment descriptions reference materials by stable ID; they
 do not contain renderer-specific pipeline objects.
 
 The first implementation supports opaque dielectric and metallic surfaces with
-a GGX microfacet response. This is sufficient to distinguish painted metal,
-brushed or polished metal, molded plastic, rubber, and illuminated indicators.
+a GGX microfacet response. Painted enclosures also receive a restrained
+clearcoat lobe driven by the same runtime studio strips; this preserves a clean,
+material-independent reflection over the base paint. This is sufficient to
+distinguish painted metal, brushed or polished metal, molded plastic, rubber,
+and illuminated indicators.
 Transmission, subsurface scattering, anisotropy, and multilayer automotive paint
 are deferred until an equipment use case justifies them.
 

@@ -50,6 +50,7 @@ const materials = struct {
     const board_base = Material{ .base_color = .{ 0.032, 0.022, 0.016 }, .roughness = 0.72, .metallic = 0.08 };
     const wood_a = Material{ .base_color = .{ 0.115, 0.052, 0.021 }, .roughness = 0.58, .metallic = 0.02 };
     const wood_b = Material{ .base_color = .{ 0.075, 0.030, 0.014 }, .roughness = 0.66, .metallic = 0.02 };
+    const wood_c = Material{ .base_color = .{ 0.145, 0.070, 0.030 }, .roughness = 0.61, .metallic = 0.02 };
     const black_metal = Material{ .base_color = .{ 0.025, 0.032, 0.031 }, .roughness = 0.19, .metallic = 0.82 };
     const chrome = Material{ .base_color = .{ 0.48, 0.52, 0.50 }, .roughness = 0.14, .metallic = 1.0 };
     const rubber = Material{ .base_color = .{ 0.012, 0.015, 0.014 }, .roughness = 0.78, .metallic = 0.0 };
@@ -81,32 +82,56 @@ pub fn build(mesh: *Mesh, rig: *const demo.Rig) !void {
 }
 
 fn addPedalboard(mesh: *Mesh) !void {
-    try addBox(mesh, .{ 0, -0.02, 0 }, .{ 12.7, 0.38, 6.0 }, materials.board_base);
-    const plank_count = 11;
-    const gap: f32 = 0.055;
-    const width = (12.4 - gap * (plank_count - 1)) / plank_count;
-    var index: usize = 0;
-    while (index < plank_count) : (index += 1) {
-        const x = -6.2 + width * 0.5 + @as(f32, @floatFromInt(index)) * (width + gap);
-        try addBeveledBox(mesh, .{ x, 0.18, 0 }, .{ width, 0.20, 5.72 }, 0.055, if (index % 2 == 0) materials.wood_a else materials.wood_b);
+    const floor_width: f32 = 19.2;
+    const floor_depth: f32 = 11.5;
+    const row_count: usize = 9;
+    const plank_length: f32 = 3.15;
+    const gap: f32 = 0.045;
+    const row_depth = (floor_depth - gap * @as(f32, @floatFromInt(row_count - 1))) /
+        @as(f32, @floatFromInt(row_count));
+
+    try addBox(mesh, .{ 0, -0.02, 0 }, .{ floor_width + 0.28, 0.38, floor_depth + 0.28 }, materials.board_base);
+
+    for (0..row_count) |row| {
+        const z = -floor_depth * 0.5 + row_depth * 0.5 +
+            @as(f32, @floatFromInt(row)) * (row_depth + gap);
+        const stagger = if (row % 2 == 0) 0.0 else plank_length * 0.5;
+        var left = -floor_width * 0.5 - stagger;
+        var column: usize = 0;
+        while (left < floor_width * 0.5) : ({
+            left += plank_length;
+            column += 1;
+        }) {
+            const visible_left = @max(left, -floor_width * 0.5);
+            const visible_right = @min(left + plank_length - gap, floor_width * 0.5);
+            const visible_width = visible_right - visible_left;
+            if (visible_width <= 0.08) continue;
+            const material = switch ((row * 2 + column) % 3) {
+                0 => materials.wood_a,
+                1 => materials.wood_b,
+                else => materials.wood_c,
+            };
+            try addBox(mesh, .{ (visible_left + visible_right) * 0.5, 0.18, z }, .{
+                visible_width,
+                0.20,
+                row_depth,
+            }, material);
+        }
     }
-    try addBox(mesh, .{ 0, -0.22, -2.45 }, .{ 12.8, 0.30, 0.24 }, materials.black_metal);
-    try addBox(mesh, .{ 0, -0.22, 2.45 }, .{ 12.8, 0.30, 0.24 }, materials.black_metal);
 }
 
 fn addPedal(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void {
     const body_material = accentMaterial(pedal.accent);
     if (pedal.presentation == .open) {
         const tray_height = size[1] * 0.42;
-        try addBeveledBox(mesh, .{ base[0], base[1] + tray_height * 0.5, base[2] }, .{ size[0], tray_height, size[2] }, 0.18, darkened(body_material, 0.55));
+        try addBeveledBox(mesh, .{ base[0], base[1] + tray_height * 0.5, base[2] }, .{ size[0], tray_height, size[2] }, 0.10, darkened(body_material, 0.55));
         try addBox(mesh, .{ base[0], base[1] + tray_height + 0.035, base[2] }, .{ size[0] * 0.78, 0.07, size[2] * 0.72 }, materials.pcb);
         try addOpenLid(mesh, base, size, body_material);
         try addComponents(mesh, base, size, tray_height);
     } else {
-        try addBeveledBox(mesh, .{ base[0], base[1] + size[1] * 0.5, base[2] }, size, 0.22, body_material);
+        try addBeveledBox(mesh, .{ base[0], base[1] + size[1] * 0.5, base[2] }, size, 0.10, body_material);
         try addControls(mesh, pedal, base, size);
         try addFootswitches(mesh, pedal, base, size);
-        try addScrews(mesh, base, size);
     }
     try addPorts(mesh, pedal, base, size);
 }
@@ -159,21 +184,6 @@ fn addFootswitches(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !
         try addCylinder(mesh, .{ x, top + 0.09, z }, 0.18, 0.16, materials.chrome, .y);
         try addCylinder(mesh, .{ x, top + 0.19, z }, 0.125, 0.12, materials.rubber, .y);
         try addCylinder(mesh, .{ x, top + 0.055, z - size[2] * 0.16 }, 0.055, 0.08, materials.led, .y);
-    }
-}
-
-fn addScrews(mesh: *Mesh, base: [3]f32, size: [3]f32) !void {
-    const top = base[1] + size[1] + 0.025;
-    const inset: f32 = 0.14;
-    const corners = [_][2]f32{
-        .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
-    };
-    for (corners) |corner| {
-        try addCylinder(mesh, .{
-            base[0] + corner[0] * (size[0] * 0.5 - inset),
-            top,
-            base[2] + corner[1] * (size[2] * 0.5 - inset),
-        }, 0.055, 0.05, materials.chrome, .y);
     }
 }
 
@@ -447,7 +457,7 @@ fn normalized3(value: [3]f32) [3]f32 {
 test "semantic pedalboard produces bounded 3D geometry" {
     var mesh = Mesh{};
     try build(&mesh, &demo.rig);
-    try std.testing.expect(mesh.len > 40_000);
+    try std.testing.expect(mesh.len > 30_000);
     try std.testing.expect(mesh.len < Mesh.max_vertices);
     try std.testing.expectEqual(@as(usize, 0), mesh.len % 3);
     for (mesh.items()) |item| {
