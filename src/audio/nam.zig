@@ -203,6 +203,50 @@ const Conv1d = struct {
         self.write_index += 1;
         if (self.write_index == self.history_frames) self.write_index = 0;
     }
+
+    /// Processes planar channel data while preserving the exact causal state
+    /// used by `process`. Time is the contiguous inner dimension so release
+    /// builds can vectorize the dominant multiply-accumulate loops.
+    fn processPlanar(self: *Conv1d, input: []const f32, output: []f32, frames: usize) void {
+        std.debug.assert(input.len >= self.in_channels * frames);
+        std.debug.assert(output.len >= self.out_channels * frames);
+        for (0..self.out_channels) |out_index| {
+            const bias: f32 = if (self.bias.len == 0) 0.0 else self.bias[out_index];
+            @memset(output[out_index * frames ..][0..frames], bias);
+            for (0..self.in_channels) |in_index| {
+                const history = self.history[in_index * self.history_frames ..][0..self.history_frames];
+                const input_channel = input[in_index * frames ..][0..frames];
+                const output_channel = output[out_index * frames ..][0..frames];
+                const weight_start = (out_index * self.in_channels + in_index) * self.kernel_size;
+                const weights = self.weights[weight_start..][0..self.kernel_size];
+                for (weights, 0..) |weight, tap| {
+                    const lookback = (self.kernel_size - 1 - tap) * self.dilation;
+                    const history_output_frames = @min(lookback, frames);
+                    for (output_channel[0..history_output_frames], 0..) |*sample, frame| {
+                        const ago = lookback - frame;
+                        const history_index = if (self.write_index >= ago)
+                            self.write_index - ago
+                        else
+                            self.write_index + self.history_frames - ago;
+                        sample.* += weight * history[history_index];
+                    }
+                    if (lookback < frames) {
+                        for (output_channel[lookback..], input_channel[0 .. frames - lookback]) |*sample, source| {
+                            sample.* += weight * source;
+                        }
+                    }
+                }
+            }
+        }
+
+        for (0..frames) |frame| {
+            for (0..self.in_channels) |channel| {
+                self.history[channel * self.history_frames + self.write_index] = input[channel * frames + frame];
+            }
+            self.write_index += 1;
+            if (self.write_index == self.history_frames) self.write_index = 0;
+        }
+    }
 };
 
 const Layer = struct {
@@ -232,6 +276,8 @@ pub const Model = struct {
     layers: []Layer,
     head: Conv1d,
     head_scale: f32,
+    block_scratch: []f32 = &.{},
+    block_capacity: usize = 0,
 
     pub const Quality = enum {
         lightweight,
@@ -357,6 +403,7 @@ pub const Model = struct {
         for (self.layers) |*layer| layer.deinit();
         self.allocator.free(self.layers);
         self.head.deinit();
+        if (self.block_scratch.len != 0) self.allocator.free(self.block_scratch);
         self.parsed.deinit();
         self.* = undefined;
     }
@@ -373,9 +420,76 @@ pub const Model = struct {
         for (0..rounded * frames) |_| _ = self.processSample(0.0);
     }
 
+    /// Allocates reusable planar scratch outside the real-time callback.
+    pub fn prepareBlock(self: *Model, maximum_frames: usize) !void {
+        if (maximum_frames == 0) return error.InvalidNamBlockSize;
+        if (maximum_frames <= self.block_capacity) return;
+        const sample_count = std.math.mul(usize, maximum_frames, self.channels * 4) catch
+            return error.InvalidNamBlockSize;
+        const scratch = try self.allocator.alloc(f32, sample_count);
+        if (self.block_scratch.len != 0) self.allocator.free(self.block_scratch);
+        self.block_scratch = scratch;
+        self.block_capacity = maximum_frames;
+    }
+
     pub fn process(self: *Model, input: []const f32, output: []f32) void {
         std.debug.assert(output.len >= input.len);
         for (input, output[0..input.len]) |sample, *result| result.* = self.processSample(sample);
+    }
+
+    /// Block-equivalent WaveNet evaluation for mono input and output.
+    /// `prepareBlock` must be called with at least `input.len` before entering
+    /// the real-time thread.
+    pub fn processBlock(self: *Model, input: []const f32, output: []f32) void {
+        std.debug.assert(input.len == output.len);
+        const frames = input.len;
+        std.debug.assert(frames > 0 and frames <= self.block_capacity);
+        const plane_samples = self.channels * frames;
+        const current = self.block_scratch[0..plane_samples];
+        const z = self.block_scratch[plane_samples..][0..plane_samples];
+        const residual = self.block_scratch[plane_samples * 2 ..][0..plane_samples];
+        const head_sum = self.block_scratch[plane_samples * 3 ..][0..plane_samples];
+        @memset(head_sum, 0.0);
+
+        for (0..self.channels) |channel| {
+            const bias: f32 = if (self.rechannel.bias.len == 0) 0.0 else self.rechannel.bias[channel];
+            const weight = self.rechannel.weights[channel];
+            for (current[channel * frames ..][0..frames], input) |*sample, scalar| {
+                sample.* = bias + weight * scalar;
+            }
+        }
+
+        for (self.layers) |*layer| {
+            layer.conv.processPlanar(current, z, frames);
+            for (0..self.channels) |channel| {
+                const mix_bias: f32 = if (layer.input_mixin.bias.len == 0) 0.0 else layer.input_mixin.bias[channel];
+                const mix_weight = layer.input_mixin.weights[channel];
+                const z_channel = z[channel * frames ..][0..frames];
+                const head_channel = head_sum[channel * frames ..][0..frames];
+                for (z_channel, head_channel, input) |*value, *head_value, scalar| {
+                    value.* += mix_bias + mix_weight * scalar;
+                    if (value.* < 0.0) value.* *= layer.negative_slope;
+                    head_value.* += value.*;
+                }
+            }
+
+            for (0..self.channels) |out_channel| {
+                const bias: f32 = if (layer.layer1x1.bias.len == 0) 0.0 else layer.layer1x1.bias[out_channel];
+                @memset(residual[out_channel * frames ..][0..frames], bias);
+                for (0..self.channels) |in_channel| {
+                    const weight = layer.layer1x1.weights[out_channel * self.channels + in_channel];
+                    const source = z[in_channel * frames ..][0..frames];
+                    const destination = residual[out_channel * frames ..][0..frames];
+                    for (destination, source) |*value, sample| value.* += weight * sample;
+                }
+                const current_channel = current[out_channel * frames ..][0..frames];
+                const residual_channel = residual[out_channel * frames ..][0..frames];
+                for (current_channel, residual_channel) |*value, addition| value.* += addition;
+            }
+        }
+
+        self.head.processPlanar(head_sum, output, frames);
+        for (output) |*sample| sample.* *= self.head_scale;
     }
 
     pub fn processSample(self: *Model, input: f32) f32 {
@@ -427,6 +541,46 @@ test "causal convolution follows NAM oldest-to-newest weight order" {
     try std.testing.expectEqual(@as(f32, 210.0), output[0]);
     conv.process(&.{3.0}, &output);
     try std.testing.expectEqual(@as(f32, 321.0), output[0]);
+}
+
+test "block WaveNet evaluation matches sample evaluation" {
+    const wav = @import("wav.zig");
+    const allocator = std.testing.allocator;
+    const model_bytes = try std.Io.Dir.cwd().readFileAlloc(
+        std.testing.io,
+        "resources/audio/models/nam/dumble-ods-102-ford-hyper-accuracy-plus/SLAMMIN_DUMBLE_FORD_CLN_MAIN_S.nam",
+        allocator,
+        .limited(2 * 1024 * 1024),
+    );
+    defer allocator.free(model_bytes);
+    var sample_model = try Model.load(allocator, model_bytes);
+    defer sample_model.deinit();
+    var block_model = try Model.load(allocator, model_bytes);
+    defer block_model.deinit();
+    try block_model.prepareBlock(64);
+
+    const wav_bytes = try std.Io.Dir.cwd().readFileAlloc(
+        std.testing.io,
+        "resources/audio/fixtures/inputs/celestial-guitar-48k-mono.wav",
+        allocator,
+        .limited(8 * 1024 * 1024),
+    );
+    defer allocator.free(wav_bytes);
+    var source = try wav.decode(allocator, wav_bytes);
+    defer source.deinit(allocator);
+    sample_model.prewarm(64);
+    block_model.prewarm(64);
+
+    var expected: [256]f32 = undefined;
+    var actual: [256]f32 = undefined;
+    sample_model.process(source.samples[0..expected.len], &expected);
+    for (0..4) |block| {
+        const start = block * 64;
+        block_model.processBlock(source.samples[start..][0..64], actual[start..][0..64]);
+    }
+    for (expected, actual) |sample, block| {
+        try std.testing.expectApproxEqAbs(sample, block, 0.000002);
+    }
 }
 
 test "Dumble full model agrees with NAM Core reference samples" {

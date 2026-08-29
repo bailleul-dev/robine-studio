@@ -63,8 +63,15 @@ pub const studio_viewport = struct {
     pub const height: f32 = 0.80;
 };
 
+pub const BuildState = struct {
+    /// Optional per-pedal runtime bypass state. Missing entries default to on.
+    pedal_enabled: []const bool = &.{},
+};
+
 const combo_center = [3]f32{ 0, 2.33, -5.55 };
 const combo_size = [3]f32{ 7.20, 4.10, 1.78 };
+const millimetres_to_world: f32 = 0.022;
+const pedal_gap: f32 = 0.30;
 
 pub const Mesh = struct {
     pub const max_vertices = 100_000;
@@ -133,26 +140,67 @@ const LatheRing = struct {
     radius: f32,
 };
 
-pub fn build(mesh: *Mesh, rig: *const demo.Rig) !void {
+pub fn build(mesh: *Mesh, rig: *const demo.Rig, state: BuildState) !void {
     mesh.* = .{};
     try addPedalboard(mesh);
     try addStudioRoom(mesh);
     try addComboAmplifier(mesh);
 
-    const millimetres_to_world: f32 = 0.022;
-    const gap: f32 = 0.30;
-    var total_width: f32 = gap * @as(f32, @floatFromInt(rig.pedals.len - 1));
-    for (rig.pedals) |pedal| total_width += pedal.enclosure.dimensions.width * millimetres_to_world;
-
-    var cursor = total_width * 0.5;
-    for (rig.pedals) |pedal| {
-        const width = pedal.enclosure.dimensions.width * millimetres_to_world;
-        const depth = pedal.enclosure.dimensions.depth * millimetres_to_world;
-        const height = pedal.enclosure.dimensions.height * millimetres_to_world;
-        const center_x = cursor - width * 0.5;
-        try addPedal(mesh, pedal, .{ center_x, 0.24, 0 }, .{ width, height, depth });
-        cursor -= width + gap;
+    for (rig.pedals, 0..) |pedal, index| {
+        const placement = pedalPlacement(rig, index) orelse unreachable;
+        const enabled = if (index < state.pedal_enabled.len) state.pedal_enabled[index] else true;
+        try addPedal(mesh, pedal, placement.base, placement.size, enabled);
     }
+}
+
+pub fn hitTestPedalFootswitch(
+    point: [2]f32,
+    window_aspect: f32,
+    rig: *const demo.Rig,
+    pedal_index: usize,
+    footswitch_index: usize,
+) bool {
+    const placement = pedalPlacement(rig, pedal_index) orelse return false;
+    const pedal = rig.pedals[pedal_index];
+    const count = @max(@as(usize, 1), @as(usize, pedal.footswitch_count));
+    if (footswitch_index >= count) return false;
+    const x = placement.base[0] + placement.size[0] *
+        ((@as(f32, @floatFromInt(footswitch_index)) + 1.0) /
+            @as(f32, @floatFromInt(count + 1)) - 0.5) * 0.72;
+    const z = placement.base[2] + placement.size[2] * 0.29;
+    const center_world = [3]f32{ x, placement.base[1] + placement.size[1] + 0.18, z };
+    const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
+    const center = projectToWindow(center_world, rig_camera, viewport_aspect) orelse return false;
+    const edge_x = projectToWindow(.{ center_world[0] + 0.34, center_world[1], center_world[2] }, rig_camera, viewport_aspect) orelse return false;
+    const edge_z = projectToWindow(.{ center_world[0], center_world[1], center_world[2] + 0.34 }, rig_camera, viewport_aspect) orelse return false;
+    const radius_x = @max(@abs(edge_x[0] - center[0]) * 1.55, 0.025);
+    const radius_y = @max(@abs(edge_z[1] - center[1]) * 1.55, 0.030);
+    const dx = (point[0] - center[0]) / radius_x;
+    const dy = (point[1] - center[1]) / radius_y;
+    return dx * dx + dy * dy <= 1.0;
+}
+
+const PedalPlacement = struct {
+    base: [3]f32,
+    size: [3]f32,
+};
+
+fn pedalPlacement(rig: *const demo.Rig, pedal_index: usize) ?PedalPlacement {
+    if (pedal_index >= rig.pedals.len) return null;
+    var total_width = pedal_gap * @as(f32, @floatFromInt(rig.pedals.len - 1));
+    for (rig.pedals) |pedal| total_width += pedal.enclosure.dimensions.width * millimetres_to_world;
+    var cursor = total_width * 0.5;
+    for (rig.pedals, 0..) |pedal, index| {
+        const size = [3]f32{
+            pedal.enclosure.dimensions.width * millimetres_to_world,
+            pedal.enclosure.dimensions.height * millimetres_to_world,
+            pedal.enclosure.dimensions.depth * millimetres_to_world,
+        };
+        const center_x = cursor - size[0] * 0.5;
+        if (index == pedal_index) return .{ .base = .{ center_x, 0.24, 0 }, .size = size };
+        cursor -= size[0] + pedal_gap;
+    }
+    return null;
 }
 
 pub fn hitTestAmplifier(point: [2]f32, window_aspect: f32) bool {
@@ -389,7 +437,7 @@ fn addComboAmplifier(mesh: *Mesh) !void {
     try addBox(mesh, .{ center[0] + size[0] * 0.34, floor_top - 0.035, center[2] }, .{ 0.46 * scale_x, 0.21 * scale_y, 0.62 * scale_z }, materials.rubber);
 }
 
-fn addPedal(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void {
+fn addPedal(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32, enabled: bool) !void {
     const body_material = accentMaterial(pedal.accent);
     if (pedal.presentation == .open) {
         const tray_height = size[1] * 0.42;
@@ -400,7 +448,7 @@ fn addPedal(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void {
     } else {
         try addBeveledBox(mesh, .{ base[0], base[1] + size[1] * 0.5, base[2] }, size, 0.10, body_material);
         try addControls(mesh, pedal, base, size);
-        try addFootswitches(mesh, pedal, base, size);
+        try addFootswitches(mesh, pedal, base, size, enabled);
     }
     try addPorts(mesh, pedal, base, size);
 }
@@ -442,9 +490,9 @@ fn addControls(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void
     }
 }
 
-fn addFootswitches(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32) !void {
+fn addFootswitches(mesh: *Mesh, pedal: demo.Pedal, base: [3]f32, size: [3]f32, enabled: bool) !void {
     const count = @max(@as(usize, 1), @as(usize, pedal.footswitch_count));
-    const brightness = std.math.clamp(pedal.indicator_brightness, 0, 1);
+    const brightness = if (enabled) std.math.clamp(pedal.indicator_brightness, 0, 1) else 0;
     for (0..count) |index| {
         const x = base[0] + size[0] * ((@as(f32, @floatFromInt(index)) + 1.0) / @as(f32, @floatFromInt(count + 1)) - 0.5) * 0.72;
         const z = base[2] + size[2] * 0.29;
@@ -905,8 +953,9 @@ fn vertex(position: [3]f32, normal: [3]f32, material: Material) Vertex {
 }
 
 fn ledLensMaterial(brightness: f32) Material {
+    const level = 0.08 + brightness * 0.92;
     return .{
-        .base_color = .{ 0.004, 0.78, 0.025 },
+        .base_color = .{ 0.003, 0.32 * level, 0.010 },
         .roughness = 0.09,
         .metallic = 0.02,
         .emissive = 1.8 * brightness,
@@ -914,8 +963,9 @@ fn ledLensMaterial(brightness: f32) Material {
 }
 
 fn ledCoreMaterial(brightness: f32) Material {
+    const level = 0.05 + brightness * 0.95;
     return .{
-        .base_color = .{ 0.012, 1.0, 0.055 },
+        .base_color = .{ 0.006, 0.72 * level, 0.025 },
         .roughness = 0.05,
         .metallic = 0,
         .emissive = 4.6 * brightness,
@@ -986,7 +1036,7 @@ fn dot3(a: [3]f32, b: [3]f32) f32 {
 
 test "semantic pedalboard produces bounded 3D geometry" {
     var mesh = Mesh{};
-    try build(&mesh, &demo.rig);
+    try build(&mesh, &demo.rig, .{});
     try std.testing.expect(mesh.len > 30_000);
     try std.testing.expect(mesh.len < Mesh.max_vertices);
     try std.testing.expectEqual(@as(usize, 11), mesh.emissiveLights().len);
@@ -1011,7 +1061,7 @@ test "open presentation remains available outside the default rig" {
     var rig = demo.rig;
     rig.pedals = &pedals;
     var mesh = Mesh{};
-    try build(&mesh, &rig);
+    try build(&mesh, &rig, .{});
     try std.testing.expect(mesh.len > 35_000);
 }
 
@@ -1024,4 +1074,28 @@ test "combo amplifier projects to a clickable rig-view region" {
 test "focused combo remains clickable for direct return navigation" {
     const projected_center = projectToWindow(combo_center, amplifier_camera, (1200.0 / 760.0) * studio_viewport.width / studio_viewport.height) orelse return error.ComboBehindCamera;
     try std.testing.expect(hitTestFocusedAmplifier(projected_center, 1200.0 / 760.0));
+}
+
+test "first semantic footswitch is picked at its projected position" {
+    const aspect: f32 = 1200.0 / 760.0;
+    const placement = pedalPlacement(&demo.rig, 0) orelse return error.MissingFirstPedal;
+    const center_world = [3]f32{
+        placement.base[0],
+        placement.base[1] + placement.size[1] + 0.18,
+        placement.base[2] + placement.size[2] * 0.29,
+    };
+    const projected = projectToWindow(
+        center_world,
+        rig_camera,
+        aspect * studio_viewport.width / studio_viewport.height,
+    ) orelse return error.FootswitchBehindCamera;
+    try std.testing.expect(hitTestPedalFootswitch(projected, aspect, &demo.rig, 0, 0));
+    try std.testing.expect(!hitTestPedalFootswitch(.{ -0.95, 0.90 }, aspect, &demo.rig, 0, 0));
+}
+
+test "disabled first pedal keeps its LED geometry but removes emission" {
+    var mesh = Mesh{};
+    const enabled = [_]bool{false};
+    try build(&mesh, &demo.rig, .{ .pedal_enabled = &enabled });
+    try std.testing.expectEqual(@as(f32, 0.0), mesh.emissiveLights()[4].intensity);
 }

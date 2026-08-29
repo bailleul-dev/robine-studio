@@ -6,6 +6,11 @@ pub const default_nam = @embedFile(
     "models/nam/dumble-ods-102-ford-hyper-accuracy-plus/SLAMMIN_DUMBLE_FORD_CLN_MAIN_S.nam",
 );
 
+/// Full-quality midpoint capture mapped to the first demo pedal.
+pub const first_pedal_nam = @embedFile(
+    "models/nam/sp-compressor/SpCompressor_Mid.nam",
+);
+
 /// Initial cabinet response. Position C is an opaque pack identifier: the
 /// source archive does not document its physical microphone placement.
 pub const default_cabinet_ir = @embedFile(

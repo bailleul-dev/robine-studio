@@ -44,6 +44,7 @@ pub const Options = struct {
     fill_vertices: []const wireframe.Vertex,
     equipment_vertices: []const lighting_lab.Vertex = &.{},
     equipment_lights: []const pedalboard_3d.EmissiveLight = &.{},
+    equipment_revision: u64 = 0,
     equipment_camera: pedalboard_3d.CameraPose = pedalboard_3d.rig_camera,
     mode: ContentMode = .wireframe,
     interaction: ?Interaction = null,
@@ -54,6 +55,7 @@ pub const Geometry = struct {
     fill_vertices: []const wireframe.Vertex,
     equipment_vertices: []const lighting_lab.Vertex = &.{},
     equipment_lights: []const pedalboard_3d.EmissiveLight = &.{},
+    equipment_revision: u64 = 0,
     equipment_camera: pedalboard_3d.CameraPose = pedalboard_3d.rig_camera,
     mode: ContentMode = .wireframe,
 };
@@ -82,6 +84,7 @@ const RenderState = struct {
     equipment_buffer: Object,
     equipment_count: usize,
     equipment_source_ptr: usize,
+    equipment_revision: u64,
     equipment_lights: []const pedalboard_3d.EmissiveLight,
     mode: ContentMode,
     lighting_lab: LightingLabRenderState,
@@ -711,6 +714,7 @@ pub fn run(options: Options) !void {
         .equipment_buffer = equipment_buffer,
         .equipment_count = options.equipment_vertices.len,
         .equipment_source_ptr = @intFromPtr(options.equipment_vertices.ptr),
+        .equipment_revision = options.equipment_revision,
         .equipment_lights = options.equipment_lights,
         .mode = options.mode,
         .lighting_lab = lab_render_state,
@@ -1015,7 +1019,9 @@ fn replaceGeometry(state: *RenderState, geometry: Geometry) !void {
     const new_fill_buffer = try createVertexBuffer(state.device, geometry.fill_vertices);
     errdefer send0(void, new_fill_buffer, "release") catch {};
     const equipment_source_ptr = @intFromPtr(geometry.equipment_vertices.ptr);
-    const equipment_changed = equipment_source_ptr != state.equipment_source_ptr or geometry.equipment_vertices.len != state.equipment_count;
+    const equipment_changed = equipment_source_ptr != state.equipment_source_ptr or
+        geometry.equipment_vertices.len != state.equipment_count or
+        geometry.equipment_revision != state.equipment_revision;
     var new_equipment_buffer = state.equipment_buffer;
     var new_acceleration_structure: Object = null;
     if (equipment_changed) {
@@ -1041,6 +1047,7 @@ fn replaceGeometry(state: *RenderState, geometry: Geometry) !void {
     state.fill_count = geometry.fill_vertices.len;
     state.equipment_count = geometry.equipment_vertices.len;
     state.equipment_source_ptr = equipment_source_ptr;
+    state.equipment_revision = geometry.equipment_revision;
     state.equipment_lights = geometry.equipment_lights;
     state.mode = geometry.mode;
     const current_camera = cameraAt(&state.camera_transition, CACurrentMediaTime());

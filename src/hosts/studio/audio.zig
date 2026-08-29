@@ -8,29 +8,48 @@ pub const StartupPlayer = struct {
     allocator: std.mem.Allocator,
     driver: native_audio.CoreAudioDriver = .{},
     source: robine.audio.wav.Audio,
-    model: robine.audio.nam.Model,
+    compressor: robine.audio.nam.Model,
+    amplifier: robine.audio.nam.Model,
     cabinet: robine.audio.convolver.Convolver,
+    compressor_enabled: *const robine.core.equipment_state.EquipmentSwitch,
+    compressor_bypass: robine.audio.bypass.Smoother,
+    pedal_block: []f32,
+    amplifier_block: []f32,
     opened: ?contract.OpenedSession = null,
     render_frame: usize = 0,
 
     /// Must be called on the final address of StartupPlayer: CoreAudio retains
     /// `self` as its allocation-free callback context.
-    pub fn init(self: *StartupPlayer, allocator: std.mem.Allocator) !void {
+    pub fn init(
+        self: *StartupPlayer,
+        allocator: std.mem.Allocator,
+        compressor_enabled: *const robine.core.equipment_state.EquipmentSwitch,
+    ) !void {
         self.* = undefined;
         self.allocator = allocator;
         self.driver = .{};
         self.opened = null;
         self.render_frame = 0;
+        self.compressor_enabled = compressor_enabled;
 
         self.source = try robine.audio.wav.decode(allocator, assets.input_wav);
         errdefer self.source.deinit(allocator);
         if (self.source.channels != 1) return error.DevelopmentInputMustBeMono;
 
-        self.model = try robine.audio.nam.Model.loadQuality(allocator, assets.default_nam, .full);
-        errdefer self.model.deinit();
-        if (@abs(self.model.sample_rate - @as(f64, @floatFromInt(self.source.sample_rate))) > 0.5) {
+        self.compressor = try robine.audio.nam.Model.loadQuality(allocator, assets.first_pedal_nam, .full);
+        errdefer self.compressor.deinit();
+        self.amplifier = try robine.audio.nam.Model.loadQuality(allocator, assets.default_nam, .full);
+        errdefer self.amplifier.deinit();
+        if (@abs(self.compressor.sample_rate - self.amplifier.sample_rate) > 0.5 or
+            @abs(self.amplifier.sample_rate - @as(f64, @floatFromInt(self.source.sample_rate))) > 0.5)
+        {
             return error.SourceAndNamSampleRatesDiffer;
         }
+        self.compressor_bypass = try .init(
+            compressor_enabled.isEnabled(),
+            self.amplifier.sample_rate,
+            0.005,
+        );
 
         var cabinet_ir = try robine.audio.wav.decode(allocator, assets.default_cabinet_ir);
         defer cabinet_ir.deinit(allocator);
@@ -48,7 +67,7 @@ pub const StartupPlayer = struct {
         const opened = try self.driver.driver().open(
             .{
                 .direction = .output,
-                .sample_rate = self.model.sample_rate,
+                .sample_rate = self.amplifier.sample_rate,
                 .preferred_frames = 64,
                 .input_channels = 0,
                 .output_channels = 2,
@@ -57,21 +76,28 @@ pub const StartupPlayer = struct {
             process,
         );
         errdefer opened.session.close();
-        if (@abs(opened.config.sample_rate - self.model.sample_rate) > 0.5) {
+        if (@abs(opened.config.sample_rate - self.amplifier.sample_rate) > 0.5) {
             std.log.err(
                 "CoreAudio negotiated {d:.2} Hz but NAM requires {d:.2} Hz",
-                .{ opened.config.sample_rate, self.model.sample_rate },
+                .{ opened.config.sample_rate, self.amplifier.sample_rate },
             );
             return error.OutputAndNamSampleRatesDiffer;
         }
         const format = opened.config.output_format orelse return error.MissingOutputFormat;
         try ensureWritableFormat(format);
 
-        self.model.prewarm(opened.config.maximum_frames);
+        self.pedal_block = try allocator.alloc(f32, opened.config.maximum_frames);
+        errdefer allocator.free(self.pedal_block);
+        self.amplifier_block = try allocator.alloc(f32, opened.config.maximum_frames);
+        errdefer allocator.free(self.amplifier_block);
+        try self.compressor.prepareBlock(opened.config.maximum_frames);
+        try self.amplifier.prepareBlock(opened.config.maximum_frames);
+        self.compressor.prewarm(opened.config.maximum_frames);
+        self.amplifier.prewarm(opened.config.maximum_frames);
         self.opened = opened;
         try opened.session.start();
         std.log.info(
-            "Playing development guitar through full NAM and Orange 2x12 V30 / SM57 C: {d:.0} Hz, {d} output channels, {d} frames",
+            "Playing development guitar through SP Compressor Mid, full amp NAM, and Orange 2x12 V30 / SM57 C: {d:.0} Hz, {d} output channels, {d} frames",
             .{ opened.config.sample_rate, opened.config.output_channels, opened.config.nominal_frames },
         );
     }
@@ -81,8 +107,11 @@ pub const StartupPlayer = struct {
             opened.session.stop();
             opened.session.close();
         }
+        self.allocator.free(self.amplifier_block);
+        self.allocator.free(self.pedal_block);
         self.cabinet.deinit();
-        self.model.deinit();
+        self.amplifier.deinit();
+        self.compressor.deinit();
         self.source.deinit(self.allocator);
         self.* = undefined;
     }
@@ -92,22 +121,39 @@ pub const StartupPlayer = struct {
         const output = cycle.output orelse return;
         const source_frames = self.source.frames();
         const rendered_frames = source_frames + self.cabinet.tailFrames() + self.cabinet.latencyFrames();
+        const compressor_enabled = self.compressor_enabled.isEnabled();
+        const active_frames = if (self.render_frame < source_frames)
+            @min(cycle.frames, source_frames - self.render_frame)
+        else
+            0;
+
+        if (active_frames > 0) {
+            const dry = self.source.samples[self.render_frame..][0..active_frames];
+            const pedal = self.pedal_block[0..active_frames];
+            self.compressor.processBlock(dry, pedal);
+            for (pedal, dry) |*compressed, dry_sample| {
+                compressed.* = self.compressor_bypass.process(
+                    dry_sample,
+                    compressed.*,
+                    compressor_enabled,
+                );
+            }
+            self.amplifier.processBlock(pedal, self.amplifier_block[0..active_frames]);
+        }
 
         for (0..cycle.frames) |frame| {
-            const amp_output = if (self.render_frame < source_frames)
-                self.model.processSample(self.source.samples[self.render_frame * self.source.channels])
-            else
-                0.0;
-            const sample = if (self.render_frame < rendered_frames)
+            const amp_output = if (frame < active_frames) self.amplifier_block[frame] else 0.0;
+            const absolute_frame = self.render_frame + frame;
+            const sample = if (absolute_frame < rendered_frames)
                 std.math.clamp(self.cabinet.processSample(amp_output), -1.0, 1.0)
             else
                 0.0;
-            self.render_frame += 1;
 
             for (output.channels) |channel| {
                 writeSample(channel, output.format, frame, sample);
             }
         }
+        self.render_frame += cycle.frames;
     }
 };
 

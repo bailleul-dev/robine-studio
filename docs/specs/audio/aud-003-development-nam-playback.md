@@ -5,7 +5,7 @@ Status: Implemented
 ## Summary
 
 When Robine Studio starts, it plays the deterministic mono guitar fixture once
-through the initial Dumble NAM capture, the initial cabinet response, and the
+through the initial compressor, Dumble NAM capture, cabinet response, and the
 default native output. This is a development path for validating the real audio
 stack before live input, routing controls, and plugin hosts are introduced.
 
@@ -27,11 +27,12 @@ stack before live input, routing controls, and plugin hosts are introduced.
 ## Startup path
 
 1. Studio decodes the embedded mono PCM24 fixture.
-2. Studio loads and prewarms the selected NAM submodel outside the callback.
+2. Studio loads and prewarms the full compressor and amplifier NAM submodels
+   outside the callback.
 3. The native standalone backend negotiates the model's 48 kHz sample rate.
 4. The callback consumes the fixture once, processes every frame through the
-   full NAM and cabinet convolver, and duplicates the mono result to every
-   native output channel.
+   SP Compressor, full amplifier NAM, and cabinet convolver, and duplicates the
+   mono result to every native output channel.
 5. Once the fixture ends, the callback flushes the cabinet tail and then emits
    silence until Studio closes.
 

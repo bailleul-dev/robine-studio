@@ -8,9 +8,21 @@ const Studio = struct {
     pedalboard_mesh: robine.ui.pedalboard_3d.Mesh = .{},
     view: robine.ui.wireframe.ViewState = .rig,
     amplifier_focused: bool = false,
+    first_pedal_enabled: robine.core.equipment_state.EquipmentSwitch = .init(true),
+    equipment_revision: u64 = 0,
 
     fn project(self: *Studio) !void {
         try robine.ui.wireframe.projectStudioView(&self.scene, &robine.model.demo.rig, self.view, self.amplifier_focused);
+    }
+
+    fn rebuildPedalboard(self: *Studio) !void {
+        const enabled = [_]bool{self.first_pedal_enabled.isEnabled()};
+        try robine.ui.pedalboard_3d.build(
+            &self.pedalboard_mesh,
+            &robine.model.demo.rig,
+            .{ .pedal_enabled = &enabled },
+        );
+        self.equipment_revision +%= 1;
     }
 
     fn pointerDown(context: *anyopaque, point: [2]f32, window_aspect: f32) bool {
@@ -53,6 +65,24 @@ const Studio = struct {
             return true;
         }
         if (self.view == .rig and !self.amplifier_focused and
+            robine.ui.pedalboard_3d.hitTestPedalFootswitch(
+                point,
+                window_aspect,
+                &robine.model.demo.rig,
+                0,
+                0,
+            ))
+        {
+            const previous = self.first_pedal_enabled.isEnabled();
+            _ = self.first_pedal_enabled.toggle();
+            self.rebuildPedalboard() catch |err| {
+                self.first_pedal_enabled.setEnabled(previous);
+                std.log.err("Pedal projection failed after bypass change: {s}", .{@errorName(err)});
+                return false;
+            };
+            return true;
+        }
+        if (self.view == .rig and !self.amplifier_focused and
             robine.ui.pedalboard_3d.hitTestAmplifier(point, window_aspect))
         {
             self.amplifier_focused = true;
@@ -73,6 +103,7 @@ const Studio = struct {
             .fill_vertices = self.scene.fills(),
             .equipment_vertices = self.pedalboard_mesh.items(),
             .equipment_lights = self.pedalboard_mesh.emissiveLights(),
+            .equipment_revision = self.equipment_revision,
             .equipment_camera = if (self.amplifier_focused)
                 robine.ui.pedalboard_3d.amplifier_camera
             else
@@ -88,11 +119,11 @@ const Studio = struct {
 
 pub fn main() !void {
     var studio = Studio{};
-    try robine.ui.pedalboard_3d.build(&studio.pedalboard_mesh, &robine.model.demo.rig);
+    try studio.rebuildPedalboard();
     try studio.project();
 
     var startup_player: studio_audio.StartupPlayer = undefined;
-    try startup_player.init(std.heap.page_allocator);
+    try startup_player.init(std.heap.page_allocator, &studio.first_pedal_enabled);
     defer startup_player.deinit();
 
     try platform.run(.{
@@ -103,6 +134,7 @@ pub fn main() !void {
         .fill_vertices = studio.scene.fills(),
         .equipment_vertices = studio.pedalboard_mesh.items(),
         .equipment_lights = studio.pedalboard_mesh.emissiveLights(),
+        .equipment_revision = studio.equipment_revision,
         .equipment_camera = robine.ui.pedalboard_3d.rig_camera,
         .mode = .pedalboard_3d,
         .interaction = .{

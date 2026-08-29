@@ -82,6 +82,12 @@ pub const Accent = enum {
     coral,
 };
 
+pub const AudioProcessor = struct {
+    format: enum { nam },
+    resource_id: []const u8,
+    capture_variant: []const u8,
+};
+
 pub const Pedal = struct {
     role: []const u8,
     name: []const u8,
@@ -92,6 +98,7 @@ pub const Pedal = struct {
     accent: Accent,
     footswitch_count: u8 = 1,
     indicator_brightness: f32 = 1.0,
+    processor: ?AudioProcessor = null,
 };
 
 pub const Amplifier = struct {
@@ -133,8 +140,8 @@ const amp_controls = [_]Control{
 };
 
 const compressor_controls = [_]Control{
-    .{ .role = "level", .label = "LEVEL", .normalized_value = 0.61 },
-    .{ .role = "sensitivity", .label = "SENS", .normalized_value = 0.48 },
+    .{ .role = "volume", .label = "VOLUME", .normalized_value = 0.61 },
+    .{ .role = "blend", .label = "BLEND", .normalized_value = 0.48 },
 };
 
 const fuzz_controls = [_]Control{
@@ -174,11 +181,16 @@ const top_ports = [_]PedalPort{
 const pedals = [_]Pedal{
     .{
         .role = "compressor",
-        .name = "COMPRESSOR",
+        .name = "SP COMPRESSOR",
         .controls = &compressor_controls,
         .ports = &side_ports,
         .enclosure = enclosures.single,
         .accent = .cyan,
+        .processor = .{
+            .format = .nam,
+            .resource_id = "nam.sp-compressor",
+            .capture_variant = "mid",
+        },
     },
     .{
         .role = "fuzz_service",
@@ -250,6 +262,8 @@ test "demo rig is connected semantically" {
     try std.testing.expectEqual(SurfaceSlot.start, rig.pedals[1].ports[1].slot);
     try std.testing.expectEqual(PortRole.output, rig.pedals[3].ports[1].role);
     try std.testing.expectEqual(@as(u8, 2), rig.cabinet.speaker_count);
+    try std.testing.expectEqualStrings("nam.sp-compressor", rig.pedals[0].processor.?.resource_id);
+    try std.testing.expectEqualStrings("mid", rig.pedals[0].processor.?.capture_variant);
     for (rig.pedals) |pedal| {
         try std.testing.expect(pedal.indicator_brightness >= 0 and pedal.indicator_brightness <= 1);
     }
