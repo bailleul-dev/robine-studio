@@ -43,7 +43,7 @@ pub fn main() !void {
     try robine.ui.pedalboard_3d.build(&studio.pedalboard_mesh, &robine.model.demo.rig);
     try studio.project();
     try platform.run(.{
-        .title = "Robine Studio — semantic equipment wireframe",
+        .title = "Robine Studio — descriptive equipment renderer",
         .width = 1200,
         .height = 760,
         .line_vertices = studio.scene.lines(),

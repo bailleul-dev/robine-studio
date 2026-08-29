@@ -32,6 +32,7 @@ recommended behavior, and optional behavior respectively.
 | [UI-004](ui/ui-004-assets-and-materials.md) | UI | Draft | Asset compilation and procedural material system |
 | [UI-005](ui/ui-005-focused-equipment-navigation.md) | UI | Draft | Semantic picking and focused equipment views |
 | [UI-006](ui/ui-006-runtime-lighting-and-materials.md) | UI | Draft | Runtime material response, studio lighting, reflections, and shadows |
+| [UI-007](ui/ui-007-procedural-pedalboard-3d.md) | UI | Draft | Description-driven procedural 3D pedalboard projection |
 | [STU-001](studio/stu-001-rendering-engine-mvp.md) | Studio | Draft | No-audio equipment-modeling and rendering MVP |
 | [AUD-001](audio/aud-001-audio-integration-boundary.md) | Audio | Deferred | Real-time audio subsystem boundary |
 | [HOST-001](hosts/host-001-runtime-hosts.md) | Hosts | Deferred | Studio, standalone, CLAP, and VST3 hosts |
