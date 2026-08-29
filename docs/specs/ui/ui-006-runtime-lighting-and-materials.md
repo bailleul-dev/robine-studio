@@ -108,10 +108,12 @@ For every 3D frame the backend:
 4. Applies bounded exposure, tone mapping, and the display color transform.
 5. Composites semantic 2D controls and diagnostics after the 3D pass.
 
-The current Metal vertical slice uses a depth buffer, a 1024 by 1024 shadow map,
-percentage-closer filtering, and an ACES-like display curve. Backend-specific
-objects remain inside `platform`; declarative mesh, material, and profile data
-remain inside `ui`.
+The current Metal vertical slice uses a depth buffer, 4x multisample
+anti-aliasing for the color/depth presentation pass, a 1024 by 1024 shadow map,
+percentage-closer filtering, and an ACES-like display curve. Devices without 4x
+support fall back to 2x and then 1x. The shadow-only pass remains single-sampled.
+Backend-specific objects remain inside `platform`; declarative mesh, material,
+and profile data remain inside `ui`.
 
 ## Reference comparison view
 
@@ -176,3 +178,5 @@ change sampling quality, never substitute differently lit base-color assets.
   than revealing a baked front-view highlight.
 - The scene remains readable when the moving light is behind the equipment.
 - Runtime rendering performs no source image generation or decoding per frame.
+- Equipment silhouettes, diagonal parquet seams, and screen-space wireframe
+  lines use the same supported multisample count in the presentation pass.

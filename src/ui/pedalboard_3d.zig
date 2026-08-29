@@ -30,9 +30,9 @@ pub const studio_profile = ViewProfile{
     .camera = .{ 0, 12.5, 6.5 },
     .target = .{ 0, 1.35, -2.7 },
     .field_of_view_degrees = 41.0,
-    .key_position = .{ -12.85, 5.15, -2.20 },
+    .key_position = .{ -9.0, 6.0, -1.0 },
     .key_size = .{ 1.20, 1.55 },
-    .key_intensity = 330.0,
+    .key_intensity = 220.0,
     .exposure = 1.31,
     .environment_strength = 0.72,
     .fill_radiance = .{ 0.42, 0.36, 0.28 },
@@ -53,7 +53,7 @@ pub const rig_camera = CameraPose{
 pub const amplifier_camera = CameraPose{
     .camera = .{ 0, 2.45, -0.85 },
     .target = .{ 0, 2.33, -5.55 },
-    .field_of_view_degrees = 60.0,
+    .field_of_view_degrees = 65.0,
 };
 
 pub const studio_viewport = struct {
@@ -235,8 +235,8 @@ fn addStudioRoom(mesh: *Mesh) !void {
     try addBox(mesh, .{ -side_x + 0.15, floor_top + 0.18, 0 }, .{ 0.16, 0.34, 17.8 }, materials.studio_wall_trim);
     try addBox(mesh, .{ side_x - 0.15, floor_top + 0.18, 0 }, .{ 0.16, 0.34, 17.8 }, materials.studio_wall_trim);
 
-    try addWoodWallSconce(mesh, .{ -5.65, 3.70, back_z + 0.26 });
-    try addWoodWallSconce(mesh, .{ 5.65, 3.70, back_z + 0.26 });
+    try addWoodWallSconce(mesh, .{ -5.65, 2.00, back_z + 0.26 });
+    try addWoodWallSconce(mesh, .{ 5.65, 2.00, back_z + 0.26 });
 }
 
 fn addWoodWallSconce(mesh: *Mesh, center: [3]f32) !void {
@@ -247,7 +247,7 @@ fn addWoodWallSconce(mesh: *Mesh, center: [3]f32) !void {
         .position = .{ center[0], center[1] + 0.98, center[2] + 0.48 },
         .radius = 5.2,
         .color = .{ 1.0, 0.68, 0.36 },
-        .intensity = 2.4,
+        .intensity = 4.0,
         .direction = .{ 0, 0.80, -0.60 },
         .cone_cosine = 0.70,
     });
@@ -255,7 +255,7 @@ fn addWoodWallSconce(mesh: *Mesh, center: [3]f32) !void {
         .position = .{ center[0], center[1] - 0.98, center[2] + 0.48 },
         .radius = 4.7,
         .color = .{ 1.0, 0.62, 0.30 },
-        .intensity = 2.0,
+        .intensity = 3.0,
         .direction = .{ 0, -0.80, -0.60 },
         .cone_cosine = 0.70,
     });

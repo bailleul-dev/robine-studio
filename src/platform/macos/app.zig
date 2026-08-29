@@ -319,8 +319,9 @@ const shader_source =
     \\        float3 led_specular = led_distribution * led_geometry * led_fresnel /
     \\            max(4.0 * max(dot(n, v), 0.0) * led_ndotl, 0.001);
     \\        float3 led_diffuse = (1.0 - led_fresnel) * (1.0 - metallic) * in.base_color / M_PI_F;
+    \\        float local_scale = cone_cosine > -0.5 ? 0.42 : 0.055;
     \\        float3 led_radiance = uniforms.emissive_lights[light_index].color_intensity.rgb *
-    \\            uniforms.emissive_lights[light_index].color_intensity.w * falloff * 0.055;
+    \\            uniforms.emissive_lights[light_index].color_intensity.w * falloff * local_scale;
     \\        indicator_light += (led_diffuse + led_specular) * led_radiance * led_ndotl;
     \\    }
     \\    float3 reflection = reflect(-v, n);
@@ -481,9 +482,10 @@ pub fn run(options: Options) !void {
     try send1(void, Object, application, "setDelegate:", retained_delegate);
 
     const device = MTLCreateSystemDefaultDevice() orelse return error.MetalUnavailable;
+    const sample_count = try preferredSampleCount(device);
     const library = try createLibrary(device);
-    const pipeline = try createWireframePipeline(device, library);
-    const lab_render_state = try createLightingLabRenderState(device, library);
+    const pipeline = try createWireframePipeline(device, library, sample_count);
+    const lab_render_state = try createLightingLabRenderState(device, library, sample_count);
     const command_queue = try send0(Object, device, "newCommandQueue");
     const line_buffer = try send3(
         Object,
@@ -549,6 +551,7 @@ pub fn run(options: Options) !void {
     const view_class = try makeViewClass();
     const view_alloc = try send0(Object, view_class, "alloc");
     const view = try send2(Object, Rect, Object, view_alloc, "initWithFrame:device:", frame, device);
+    try send1(void, usize, view, "setSampleCount:", sample_count);
     try send1(void, usize, view, "setColorPixelFormat:", 80);
     try send1(void, usize, view, "setDepthStencilPixelFormat:", 252);
     try send1(void, ClearColor, view, "setClearColor:", .{
@@ -599,12 +602,13 @@ fn createLibrary(device: Object) !Object {
     return error.MetalShaderCompilationFailed;
 }
 
-fn createWireframePipeline(device: Object, library: Object) !Object {
+fn createWireframePipeline(device: Object, library: Object, sample_count: usize) !Object {
     const vertex_function = try send1(Object, Object, library, "newFunctionWithName:", try nsString("vertex_main"));
     const fragment_function = try send1(Object, Object, library, "newFunctionWithName:", try nsString("fragment_main"));
 
     const descriptor_alloc = try send0(Object, try classNamed("MTLRenderPipelineDescriptor"), "alloc");
     const descriptor = try send0(Object, descriptor_alloc, "init");
+    try send1(void, usize, descriptor, "setRasterSampleCount:", sample_count);
     try send1(void, Object, descriptor, "setVertexFunction:", vertex_function);
     try send1(void, Object, descriptor, "setFragmentFunction:", fragment_function);
 
@@ -616,10 +620,11 @@ fn createWireframePipeline(device: Object, library: Object) !Object {
     return send2(Object, Object, Object, device, "newRenderPipelineStateWithDescriptor:error:", descriptor, null);
 }
 
-fn createLightingLabRenderState(device: Object, library: Object) !LightingLabRenderState {
+fn createLightingLabRenderState(device: Object, library: Object, sample_count: usize) !LightingLabRenderState {
     const pbr_vertex = try send1(Object, Object, library, "newFunctionWithName:", try nsString("pbr_vertex"));
     const pbr_fragment = try send1(Object, Object, library, "newFunctionWithName:", try nsString("pbr_fragment"));
     const pbr_descriptor = try send0(Object, try send0(Object, try classNamed("MTLRenderPipelineDescriptor"), "alloc"), "init");
+    try send1(void, usize, pbr_descriptor, "setRasterSampleCount:", sample_count);
     try send1(void, Object, pbr_descriptor, "setVertexFunction:", pbr_vertex);
     try send1(void, Object, pbr_descriptor, "setFragmentFunction:", pbr_fragment);
     const pbr_attachments = try send0(Object, pbr_descriptor, "colorAttachments");
@@ -631,6 +636,7 @@ fn createLightingLabRenderState(device: Object, library: Object) !LightingLabRen
     const layer_vertex = try send1(Object, Object, library, "newFunctionWithName:", try nsString("layer_vertex"));
     const layer_fragment = try send1(Object, Object, library, "newFunctionWithName:", try nsString("layer_fragment"));
     const layer_descriptor = try send0(Object, try send0(Object, try classNamed("MTLRenderPipelineDescriptor"), "alloc"), "init");
+    try send1(void, usize, layer_descriptor, "setRasterSampleCount:", sample_count);
     try send1(void, Object, layer_descriptor, "setVertexFunction:", layer_vertex);
     try send1(void, Object, layer_descriptor, "setFragmentFunction:", layer_fragment);
     const layer_attachments = try send0(Object, layer_descriptor, "colorAttachments");
@@ -673,6 +679,12 @@ fn createLightingLabRenderState(device: Object, library: Object) !LightingLabRen
         .vertex_count = mesh.items().len,
         .shadow_texture = try createShadowTexture(device),
     };
+}
+
+fn preferredSampleCount(device: Object) !usize {
+    if (try send1(bool, usize, device, "supportsTextureSampleCount:", 4)) return 4;
+    if (try send1(bool, usize, device, "supportsTextureSampleCount:", 2)) return 2;
+    return 1;
 }
 
 fn createShadowTexture(device: Object) !Object {
