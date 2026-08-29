@@ -330,7 +330,7 @@ fn layoutPedalBounds(bounds: Bounds, rig: *const demo.Rig) ![8]Bounds {
     if (pedals.len > 8) return error.TooManyPedalsForWireframe;
     var weights: [8]f32 = undefined;
     var total_weight: f32 = 0;
-    for (pedals, 0..) |_, index| {
+    for (pedals, 0..) |pedal, index| {
         weights[index] = pedal.enclosure.footprint_units;
         total_weight += weights[index];
     }
@@ -340,7 +340,7 @@ fn layoutPedalBounds(bounds: Bounds, rig: *const demo.Rig) ![8]Bounds {
     const available = bounds.width - margin * 2.0 - gap * @as(f32, @floatFromInt(pedals.len - 1));
     var cursor = bounds.left + margin;
     var result: [8]Bounds = undefined;
-    for (pedals, 0..) |pedal, index| {
+    for (pedals, 0..) |_, index| {
         const width = available * weights[index] / total_weight;
         const pedal_bounds = Bounds{
             .left = cursor,
