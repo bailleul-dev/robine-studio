@@ -14,7 +14,8 @@ The generated scene exposes hit regions associated with typed semantic actions.
 For the first increment:
 
 - The active 3D amplifier exposes `show_amplifier` through a projected hit region.
-- Clicking the focused amplifier again returns to the rig camera.
+- Clicking the focused amplifier advances to the next amplifier camera.
+- Clicking empty space in a focused view returns to the rig camera.
 - Picking returns the action rather than a mesh index or platform view object.
 - `ViewState` owns the current `rig` or `amplifier` projection mode.
 
@@ -33,7 +34,9 @@ The first 3D amplifier focus presents:
   from the amplifier description.
 - A distraction-free, full-width equipment viewport without a persistent
   catalog browser or signal-chain overview.
-- A direct route back to the rig view by selecting the focused amplifier again.
+- Circular Dumble → Mesa → Bogner → Dumble navigation by selecting the focused
+  amplifier body.
+- A direct route back to the rig view by selecting empty space around the amp.
 
 The reference image informs screen hierarchy only. Robine does not copy its
 branding, artwork, product geometry, or fixed coordinates into equipment data.
@@ -57,7 +60,11 @@ reuse the same action and projection mechanism.
 - Clicking the visible combo amplifier starts a slow camera transition toward its
   front face.
 - The combo remains the same semantic instance and GPU geometry during the move.
-- Clicking the focused amplifier returns to the `rig` camera.
+- Clicking the focused amplifier moves to the next amplifier with the existing
+  eased camera transition.
+- Power remains a higher-priority hit target and activates the focused amplifier
+  without advancing the camera.
+- Clicking outside the focused amplifier returns to the `rig` camera.
 - Both transitions regenerate geometry without restarting the macOS window.
 - Hit regions derive from projected semantic bounds rather than platform-authored
   coordinates.

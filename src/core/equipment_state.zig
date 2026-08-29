@@ -66,6 +66,16 @@ pub const AmplifierId = enum(u8) {
     bogner,
     dumble,
     mesa,
+
+    /// Stable camera-navigation order. This is deliberately independent from
+    /// whichever amplifier is currently powered in the audio graph.
+    pub fn next(self: AmplifierId) AmplifierId {
+        return switch (self) {
+            .dumble => .mesa,
+            .mesa => .bogner,
+            .bogner => .dumble,
+        };
+    }
 };
 
 /// UI-owned exclusive amplifier selection observed by the audio callback.
@@ -110,4 +120,10 @@ test "amplifier selection is exclusive and atomically observable" {
     try std.testing.expectEqual(AmplifierId.bogner, selector.selected());
     selector.select(.mesa);
     try std.testing.expectEqual(AmplifierId.mesa, selector.selected());
+}
+
+test "focused amplifier navigation forms a stable cycle" {
+    try std.testing.expectEqual(AmplifierId.mesa, AmplifierId.dumble.next());
+    try std.testing.expectEqual(AmplifierId.bogner, AmplifierId.mesa.next());
+    try std.testing.expectEqual(AmplifierId.dumble, AmplifierId.bogner.next());
 }

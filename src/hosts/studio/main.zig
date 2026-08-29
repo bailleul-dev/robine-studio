@@ -93,14 +93,25 @@ const Studio = struct {
                     return true;
                 }
                 if (robine.ui.pedalboard_3d.hitTestFocusedAmplifier(point, window_aspect, focused)) {
-                    self.focused_amplifier = null;
+                    const next = focused.next();
+                    self.focused_amplifier = next;
                     self.project() catch |err| {
                         self.focused_amplifier = focused;
-                        std.log.err("Scene projection failed after amplifier return: {s}", .{@errorName(err)});
+                        std.log.err("Scene projection failed during amplifier navigation: {s}", .{@errorName(err)});
                         return false;
                     };
                     return true;
                 }
+
+                // Empty space remains the explicit route back to the rig view;
+                // clicking the equipment itself is reserved for amp-to-amp navigation.
+                self.focused_amplifier = null;
+                self.project() catch |err| {
+                    self.focused_amplifier = focused;
+                    std.log.err("Scene projection failed after amplifier return: {s}", .{@errorName(err)});
+                    return false;
+                };
+                return true;
             }
         }
         if (self.view == .rig and self.focused_amplifier == null and
