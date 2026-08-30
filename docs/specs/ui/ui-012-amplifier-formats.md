@@ -17,6 +17,19 @@ The initial renderer supports:
 The Bogner Shiva uses `head_and_4x12`. Its cabinet declares a two-column,
 two-row speaker grid. Dumble and Mesa retain the `combo` format.
 
+## Finish
+
+Physical format and cosmetic finish are independent. Every amplifier assembly
+selects:
+
+- `enclosure_color`: the intrinsic tolex or covering color.
+- `gridcloth`: a reusable fabric recipe defining base material, warp, weft, and
+  weave density.
+
+Changing either property MUST NOT create a new amplifier format or duplicate its
+geometry. The Mesa Lone Star remains a `combo` and selects a blue enclosure with
+the reusable `light_gray` gridcloth recipe.
+
 ## Projection
 
 - Dimensions use the studio's shared physical scale.
@@ -45,3 +58,4 @@ scene description or interactions.
 - The focused camera contains the complete stack.
 - The Power hit target selects the switch on the head.
 - Dumble and Mesa continue to render and interact as combos.
+- Mesa renders with a blue enclosure and fine light-gray woven gridcloth.

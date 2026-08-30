@@ -101,11 +101,29 @@ pub const AmplifierFormat = enum {
     head_and_4x12,
 };
 
+pub const EnclosureColor = enum {
+    black,
+    brown,
+    blue,
+};
+
+pub const GridclothStyle = enum {
+    charcoal,
+    wheat,
+    light_gray,
+};
+
+pub const AmplifierFinish = struct {
+    enclosure_color: EnclosureColor,
+    gridcloth: GridclothStyle,
+};
+
 const AmplifierPlacement = struct {
     center: [3]f32,
     yaw_degrees: f32,
     id: AmplifierId,
     format: AmplifierFormat,
+    finish: AmplifierFinish,
 };
 const amplifier_placements = [_]AmplifierPlacement{
     // The side amplifiers move toward the listener and toe inward to form
@@ -115,9 +133,22 @@ const amplifier_placements = [_]AmplifierPlacement{
         .yaw_degrees = -12.0,
         .id = .bogner,
         .format = .head_and_4x12,
+        .finish = .{ .enclosure_color = .brown, .gridcloth = .wheat },
     },
-    .{ .center = combo_center, .yaw_degrees = 0, .id = .dumble, .format = .combo },
-    .{ .center = .{ -3.25, 1.53, -3.73 }, .yaw_degrees = 12.0, .id = .mesa, .format = .combo },
+    .{
+        .center = combo_center,
+        .yaw_degrees = 0,
+        .id = .dumble,
+        .format = .combo,
+        .finish = .{ .enclosure_color = .black, .gridcloth = .charcoal },
+    },
+    .{
+        .center = .{ -3.25, 1.53, -3.73 },
+        .yaw_degrees = 12.0,
+        .id = .mesa,
+        .format = .combo,
+        .finish = .{ .enclosure_color = .blue, .gridcloth = .light_gray },
+    },
 };
 const equipment_offset_x: f32 = -14.52;
 // 65 mm clear space leaves opposing side jacks readable without scattering the
@@ -186,9 +217,12 @@ const materials = struct {
     const amplifier_badge = Material{ .base_color = .{ 0.84, 0.67, 0.30 }, .roughness = 0.20, .metallic = 0.82 };
     const bogner_vinyl = Material{ .base_color = .{ 0.055, 0.026, 0.015 }, .roughness = 0.60, .metallic = 0.03 };
     const bogner_grille = Material{ .base_color = .{ 0.22, 0.13, 0.065 }, .roughness = 0.86, .metallic = 0.01 };
+    const bogner_grille_thread = Material{ .base_color = .{ 0.095, 0.052, 0.026 }, .roughness = 0.92, .metallic = 0.0 };
     const bogner_panel = Material{ .base_color = .{ 0.48, 0.33, 0.14 }, .roughness = 0.27, .metallic = 0.55 };
-    const mesa_vinyl = Material{ .base_color = .{ 0.115, 0.085, 0.055 }, .roughness = 0.57, .metallic = 0.03 };
-    const mesa_grille = Material{ .base_color = .{ 0.42, 0.36, 0.25 }, .roughness = 0.88, .metallic = 0.01 };
+    const blue_vinyl = Material{ .base_color = .{ 0.018, 0.075, 0.235 }, .roughness = 0.58, .metallic = 0.025 };
+    const light_gray_gridcloth = Material{ .base_color = .{ 0.46, 0.49, 0.52 }, .roughness = 0.93, .metallic = 0.0 };
+    const light_gray_gridcloth_warp = Material{ .base_color = .{ 0.70, 0.72, 0.73 }, .roughness = 0.96, .metallic = 0.0 };
+    const light_gray_gridcloth_weft = Material{ .base_color = .{ 0.30, 0.32, 0.35 }, .roughness = 0.95, .metallic = 0.0 };
     const mesa_panel = Material{ .base_color = .{ 0.64, 0.61, 0.52 }, .roughness = 0.20, .metallic = 0.72 };
     const studio_wall = Material{ .base_color = .{ 0.235, 0.205, 0.168 }, .roughness = 0.96, .metallic = 0.0 };
     const studio_wall_trim = Material{ .base_color = .{ 0.255, 0.105, 0.030 }, .roughness = 0.62, .metallic = 0.02 };
@@ -902,38 +936,92 @@ fn addWallSconce(mesh: *Mesh, center: [3]f32) !void {
 const AmplifierPalette = struct {
     vinyl: Material,
     grille: Material,
-    grille_thread: Material,
+    grille_warp: Material,
+    grille_weft: Material,
+    grille_columns: usize,
+    grille_rows: usize,
     panel: Material,
     piping: Material,
     badge: Material,
 };
 
-fn amplifierPalette(style: AmplifierId) AmplifierPalette {
+const GridclothRecipe = struct {
+    base: Material,
+    warp: Material,
+    weft: Material,
+    columns: usize,
+    rows: usize,
+};
+
+const AmplifierHardwarePalette = struct {
+    panel: Material,
+    piping: Material,
+    badge: Material,
+};
+
+fn enclosureMaterial(color: EnclosureColor) Material {
+    return switch (color) {
+        .black => materials.amplifier_vinyl,
+        .brown => materials.bogner_vinyl,
+        .blue => materials.blue_vinyl,
+    };
+}
+
+fn gridclothRecipe(style: GridclothStyle) GridclothRecipe {
     return switch (style) {
+        .charcoal => .{
+            .base = materials.amplifier_grille,
+            .warp = materials.amplifier_grille_thread,
+            .weft = materials.amplifier_grille_thread,
+            .columns = 18,
+            .rows = 8,
+        },
+        .wheat => .{
+            .base = materials.bogner_grille,
+            .warp = materials.bogner_grille_thread,
+            .weft = materials.bogner_grille_thread,
+            .columns = 22,
+            .rows = 20,
+        },
+        .light_gray => .{
+            .base = materials.light_gray_gridcloth,
+            .warp = materials.light_gray_gridcloth_warp,
+            .weft = materials.light_gray_gridcloth_weft,
+            .columns = 30,
+            .rows = 16,
+        },
+    };
+}
+
+fn amplifierPalette(placement: AmplifierPlacement) AmplifierPalette {
+    const cloth = gridclothRecipe(placement.finish.gridcloth);
+    const hardware: AmplifierHardwarePalette = switch (placement.id) {
         .dumble => .{
-            .vinyl = materials.amplifier_vinyl,
-            .grille = materials.amplifier_grille,
-            .grille_thread = materials.amplifier_grille_thread,
             .panel = materials.amplifier_panel,
             .piping = materials.amplifier_piping,
             .badge = materials.amplifier_badge,
         },
         .bogner => .{
-            .vinyl = materials.bogner_vinyl,
-            .grille = materials.bogner_grille,
-            .grille_thread = materials.amplifier_vinyl,
             .panel = materials.bogner_panel,
             .piping = materials.amplifier_piping,
             .badge = materials.amplifier_badge,
         },
         .mesa => .{
-            .vinyl = materials.mesa_vinyl,
-            .grille = materials.mesa_grille,
-            .grille_thread = materials.amplifier_panel,
             .panel = materials.mesa_panel,
             .piping = materials.chrome,
             .badge = materials.polished_chrome,
         },
+    };
+    return .{
+        .vinyl = enclosureMaterial(placement.finish.enclosure_color),
+        .grille = cloth.base,
+        .grille_warp = cloth.warp,
+        .grille_weft = cloth.weft,
+        .grille_columns = cloth.columns,
+        .grille_rows = cloth.rows,
+        .panel = hardware.panel,
+        .piping = hardware.piping,
+        .badge = hardware.badge,
     };
 }
 
@@ -948,7 +1036,7 @@ fn addComboAmplifier(mesh: *Mesh, placement: AmplifierPlacement, powered: bool) 
     const floor_top = equipment_floor_top;
     const center = placement.center;
     const size = combo_size;
-    const palette = amplifierPalette(placement.id);
+    const palette = amplifierPalette(placement);
     const vertex_start = mesh.len;
     const front_z = center[2] + size[2] * 0.5;
     const scale_x = size[0] / 5.15;
@@ -968,13 +1056,15 @@ fn addComboAmplifier(mesh: *Mesh, placement: AmplifierPlacement, powered: bool) 
 
     const grille_left = center[0] - grille_size[0] * 0.5;
     const grille_bottom = grille_center_y - grille_size[1] * 0.5;
-    for (0..18) |index| {
-        const x = grille_left + (@as(f32, @floatFromInt(index)) + 0.5) * grille_size[0] / 18.0;
-        try addBox(mesh, .{ x, grille_center_y, front_z + 0.120 * scale_z }, .{ 0.018 * scale_x, grille_size[1], 0.020 * scale_z }, palette.grille_thread);
+    for (0..palette.grille_columns) |index| {
+        const x = grille_left + (@as(f32, @floatFromInt(index)) + 0.5) * grille_size[0] /
+            @as(f32, @floatFromInt(palette.grille_columns));
+        try addBox(mesh, .{ x, grille_center_y, front_z + 0.120 * scale_z }, .{ 0.018 * scale_x, grille_size[1], 0.020 * scale_z }, palette.grille_warp);
     }
-    for (0..8) |index| {
-        const y = grille_bottom + (@as(f32, @floatFromInt(index)) + 0.5) * grille_size[1] / 8.0;
-        try addBox(mesh, .{ center[0], y, front_z + 0.126 * scale_z }, .{ grille_size[0], 0.014 * scale_y, 0.018 * scale_z }, palette.grille_thread);
+    for (0..palette.grille_rows) |index| {
+        const y = grille_bottom + (@as(f32, @floatFromInt(index)) + 0.5) * grille_size[1] /
+            @as(f32, @floatFromInt(palette.grille_rows));
+        try addBox(mesh, .{ center[0], y, front_z + 0.126 * scale_z }, .{ grille_size[0], 0.014 * scale_y, 0.018 * scale_z }, palette.grille_weft);
     }
 
     const piping_depth: f32 = 0.035 * scale_z;
@@ -1014,7 +1104,7 @@ fn addComboAmplifier(mesh: *Mesh, placement: AmplifierPlacement, powered: bool) 
 
 fn addHeadAndCabinetAmplifier(mesh: *Mesh, placement: AmplifierPlacement, powered: bool) !void {
     const center = placement.center;
-    const palette = amplifierPalette(placement.id);
+    const palette = amplifierPalette(placement);
     const vertex_start = mesh.len;
 
     // A cabinet is a semantic speaker grid rather than a stretched combo. The
@@ -1056,13 +1146,15 @@ fn addHeadAndCabinetAmplifier(mesh: *Mesh, placement: AmplifierPlacement, powere
 
     const grille_left = center[0] - grille_size[0] * 0.5;
     const grille_bottom = grille_center[1] - grille_size[1] * 0.5;
-    for (0..22) |index| {
-        const x = grille_left + (@as(f32, @floatFromInt(index)) + 0.5) * grille_size[0] / 22.0;
-        try addBox(mesh, .{ x, grille_center[1], cabinet_front_z + 0.135 }, .{ 0.014, grille_size[1], 0.016 }, palette.grille_thread);
+    for (0..palette.grille_columns) |index| {
+        const x = grille_left + (@as(f32, @floatFromInt(index)) + 0.5) * grille_size[0] /
+            @as(f32, @floatFromInt(palette.grille_columns));
+        try addBox(mesh, .{ x, grille_center[1], cabinet_front_z + 0.135 }, .{ 0.014, grille_size[1], 0.016 }, palette.grille_warp);
     }
-    for (0..20) |index| {
-        const y = grille_bottom + (@as(f32, @floatFromInt(index)) + 0.5) * grille_size[1] / 20.0;
-        try addBox(mesh, .{ center[0], y, cabinet_front_z + 0.140 }, .{ grille_size[0], 0.012, 0.014 }, palette.grille_thread);
+    for (0..palette.grille_rows) |index| {
+        const y = grille_bottom + (@as(f32, @floatFromInt(index)) + 0.5) * grille_size[1] /
+            @as(f32, @floatFromInt(palette.grille_rows));
+        try addBox(mesh, .{ center[0], y, cabinet_front_z + 0.140 }, .{ grille_size[0], 0.012, 0.014 }, palette.grille_weft);
     }
 
     const piping_z = cabinet_front_z + 0.155;
@@ -2007,6 +2099,18 @@ test "studio equipment shares a physical world scale" {
     try std.testing.expectApproxEqAbs(@as(f32, 780.0), bogner_cabinet_size[0] / millimetres_to_world, 0.001);
     try std.testing.expectApproxEqAbs(@as(f32, 740.0), bogner_cabinet_size[1] / millimetres_to_world, 0.001);
     try std.testing.expectEqual(AmplifierFormat.head_and_4x12, amplifierPlacement(.bogner).format);
+}
+
+test "combo format and cosmetic finish are independent descriptions" {
+    const dumble = amplifierPlacement(.dumble);
+    const mesa = amplifierPlacement(.mesa);
+    try std.testing.expectEqual(AmplifierFormat.combo, dumble.format);
+    try std.testing.expectEqual(AmplifierFormat.combo, mesa.format);
+    try std.testing.expectEqual(EnclosureColor.black, dumble.finish.enclosure_color);
+    try std.testing.expectEqual(GridclothStyle.charcoal, dumble.finish.gridcloth);
+    try std.testing.expectEqual(EnclosureColor.blue, mesa.finish.enclosure_color);
+    try std.testing.expectEqual(GridclothStyle.light_gray, mesa.finish.gridcloth);
+    try std.testing.expect(gridclothRecipe(.light_gray).columns > gridclothRecipe(.charcoal).columns);
 }
 
 test "studio rug selects the generated base-color texture slot" {
