@@ -81,6 +81,7 @@ pub fn build(b: *std.Build) void {
         studio.root_module.link_libc = true;
         studio.root_module.linkSystemLibrary("X11", .{});
         studio.root_module.linkSystemLibrary("GL", .{});
+        studio.root_module.linkSystemLibrary("png", .{});
         studio.root_module.linkSystemLibrary("dl", .{});
     }
     b.installArtifact(studio);

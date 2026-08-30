@@ -2,6 +2,7 @@ const std = @import("std");
 const wireframe = @import("robine").ui.wireframe;
 const lighting_lab = @import("robine").ui.lighting_lab;
 const pedalboard_3d = @import("robine").ui.pedalboard_3d;
+const pbr = @import("pbr.zig");
 
 const c = @cImport({
     @cInclude("X11/Xlib.h");
@@ -9,6 +10,7 @@ const c = @cImport({
     @cInclude("X11/keysym.h");
     @cInclude("GL/gl.h");
     @cInclude("GL/glx.h");
+    @cInclude("time.h");
     @cInclude("unistd.h");
 });
 
@@ -44,19 +46,40 @@ pub const Interaction = struct {
     geometry: *const fn (context: *anyopaque) Geometry,
 };
 
+const CameraTransition = struct {
+    from: pedalboard_3d.CameraPose,
+    to: pedalboard_3d.CameraPose,
+    started_at: f64,
+    duration: f32,
+};
+
+const equipment_camera_transition_seconds: f32 = 1.4;
+
 pub fn run(options: Options) !void {
     const display = c.XOpenDisplay(null) orelse return error.X11DisplayUnavailable;
     defer _ = c.XCloseDisplay(display);
 
     const screen = c.XDefaultScreen(display);
-    var visual_attributes = [_]c_int{
+    var preferred_visual_attributes = [_]c_int{
+        c.GLX_RGBA,
+        c.GLX_DOUBLEBUFFER,
+        c.GLX_DEPTH_SIZE,
+        24,
+        c.GLX_SAMPLE_BUFFERS,
+        1,
+        c.GLX_SAMPLES,
+        4,
+        0,
+    };
+    var fallback_visual_attributes = [_]c_int{
         c.GLX_RGBA,
         c.GLX_DOUBLEBUFFER,
         c.GLX_DEPTH_SIZE,
         24,
         0,
     };
-    const visual = c.glXChooseVisual(display, screen, &visual_attributes) orelse
+    const visual = c.glXChooseVisual(display, screen, &preferred_visual_attributes) orelse
+        c.glXChooseVisual(display, screen, &fallback_visual_attributes) orelse
         return error.OpenGLVisualUnavailable;
     defer _ = c.XFree(visual);
 
@@ -102,6 +125,17 @@ pub fn run(options: Options) !void {
         std.log.info("Linux OpenGL renderer: {s}", .{std.mem.span(renderer)});
     }
 
+    var pbr_renderer: ?pbr.Renderer = pbr.Renderer.init() catch |err| fallback: {
+        std.log.warn("OpenGL PBR unavailable; using the legacy lighting path: {s}", .{@errorName(err)});
+        break :fallback null;
+    };
+    defer if (pbr_renderer) |*renderer| renderer.deinit();
+    if (pbr_renderer != null) {
+        var samples: c.GLint = 0;
+        c.glGetIntegerv(c.GL_SAMPLES, &samples);
+        std.log.info("Linux PBR enabled: GGX, shadows, emissive lights, ACES, textured surfaces, {d}x MSAA", .{samples});
+    }
+
     c.glClearColor(0.025, 0.038, 0.036, 1.0);
     c.glEnable(c.GL_DEPTH_TEST);
     c.glEnable(c.GL_NORMALIZE);
@@ -117,6 +151,12 @@ pub fn run(options: Options) !void {
         .equipment_revision = options.equipment_revision,
         .equipment_camera = options.equipment_camera,
         .mode = options.mode,
+    };
+    var camera_transition = CameraTransition{
+        .from = options.equipment_camera,
+        .to = options.equipment_camera,
+        .started_at = monotonicSeconds(),
+        .duration = 0,
     };
     var running = true;
     while (running) {
@@ -136,7 +176,18 @@ pub fn run(options: Options) !void {
                         };
                         const aspect = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
                         if (interaction.pointer_down(interaction.context, point, aspect)) {
+                            const now = monotonicSeconds();
+                            const current_camera = cameraAt(&camera_transition, now);
                             geometry = interaction.geometry(interaction.context);
+                            camera_transition = .{
+                                .from = current_camera,
+                                .to = geometry.equipment_camera,
+                                .started_at = now,
+                                .duration = if (cameraPoseEqual(current_camera, geometry.equipment_camera))
+                                    0
+                                else
+                                    equipment_camera_transition_seconds,
+                            };
                         }
                     }
                 },
@@ -151,18 +202,37 @@ pub fn run(options: Options) !void {
             }
         }
 
-        draw(geometry, width, height);
+        draw(
+            if (pbr_renderer) |*renderer| renderer else null,
+            geometry,
+            cameraAt(&camera_transition, monotonicSeconds()),
+            width,
+            height,
+        );
         c.glXSwapBuffers(display, window);
         _ = c.usleep(16_000);
     }
 }
 
-fn draw(geometry: Geometry, width: u32, height: u32) void {
+fn draw(renderer: ?*const pbr.Renderer, geometry: Geometry, camera: pedalboard_3d.CameraPose, width: u32, height: u32) void {
     c.glViewport(0, 0, @intCast(width), @intCast(height));
     c.glClear(c.GL_COLOR_BUFFER_BIT | c.GL_DEPTH_BUFFER_BIT);
     switch (geometry.mode) {
         .wireframe => drawWireframe(geometry),
-        .pedalboard_3d => drawEquipment(geometry.equipment_vertices, geometry.equipment_camera, width, height),
+        .pedalboard_3d => if (renderer) |active_renderer|
+            active_renderer.draw(.{
+                .vertices = geometry.equipment_vertices,
+                .lights = geometry.equipment_lights,
+                .camera = camera,
+                .key_position = pedalboard_3d.studio_profile.key_position,
+                .key_size = pedalboard_3d.studio_profile.key_size,
+                .key_intensity = pedalboard_3d.studio_profile.key_intensity,
+                .exposure = pedalboard_3d.studio_profile.exposure,
+                .environment_strength = pedalboard_3d.studio_profile.environment_strength,
+                .fill_radiance = pedalboard_3d.studio_profile.fill_radiance,
+            }, width, height)
+        else
+            drawEquipment(geometry.equipment_vertices, camera, width, height),
         .lighting_lab => drawLightingLab(geometry.equipment_vertices, width, height),
     }
 }
@@ -252,9 +322,9 @@ fn lookAt(eye: [3]f32, target: [3]f32, up: [3]f32) [16]f32 {
     const x = normalized(cross(up, z));
     const y = cross(z, x);
     return .{
-        x[0], y[0], z[0], 0,
-        x[1], y[1], z[1], 0,
-        x[2], y[2], z[2], 0,
+        x[0],         y[0],         z[0],         0,
+        x[1],         y[1],         z[1],         0,
+        x[2],         y[2],         z[2],         0,
         -dot(x, eye), -dot(y, eye), -dot(z, eye), 1,
     };
 }
@@ -270,4 +340,42 @@ fn cross(a: [3]f32, b: [3]f32) [3]f32 {
 
 fn dot(a: [3]f32, b: [3]f32) f32 {
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+fn monotonicSeconds() f64 {
+    var value: c.timespec = undefined;
+    if (c.clock_gettime(c.CLOCK_MONOTONIC, &value) != 0) return 0;
+    return @as(f64, @floatFromInt(value.tv_sec)) + @as(f64, @floatFromInt(value.tv_nsec)) / 1_000_000_000.0;
+}
+
+fn cameraAt(transition: *const CameraTransition, now: f64) pedalboard_3d.CameraPose {
+    if (transition.duration <= 0) return transition.to;
+    const elapsed: f32 = @floatCast(now - transition.started_at);
+    const linear = std.math.clamp(elapsed / transition.duration, 0, 1);
+    const eased = linear * linear * linear * (linear * (linear * 6.0 - 15.0) + 10.0);
+    return .{
+        .camera = interpolate3(transition.from.camera, transition.to.camera, eased),
+        .target = interpolate3(transition.from.target, transition.to.target, eased),
+        .field_of_view_degrees = transition.from.field_of_view_degrees +
+            (transition.to.field_of_view_degrees - transition.from.field_of_view_degrees) * eased,
+    };
+}
+
+fn interpolate3(from: [3]f32, to: [3]f32, amount: f32) [3]f32 {
+    return .{
+        from[0] + (to[0] - from[0]) * amount,
+        from[1] + (to[1] - from[1]) * amount,
+        from[2] + (to[2] - from[2]) * amount,
+    };
+}
+
+fn cameraPoseEqual(a: pedalboard_3d.CameraPose, b: pedalboard_3d.CameraPose) bool {
+    const epsilon: f32 = 0.0001;
+    for (a.camera, b.camera) |a_value, b_value| {
+        if (@abs(a_value - b_value) > epsilon) return false;
+    }
+    for (a.target, b.target) |a_value, b_value| {
+        if (@abs(a_value - b_value) > epsilon) return false;
+    }
+    return @abs(a.field_of_view_degrees - b.field_of_view_degrees) <= epsilon;
 }

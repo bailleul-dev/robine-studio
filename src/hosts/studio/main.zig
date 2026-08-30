@@ -9,12 +9,12 @@ const Studio = struct {
     view: robine.ui.wireframe.ViewState = .rig,
     focused_amplifier: ?robine.core.equipment_state.AmplifierId = null,
     active_amplifier: robine.core.equipment_state.AmplifierSelector = .init(.dumble),
-    first_pedal_enabled: robine.core.equipment_state.EquipmentSwitch = .init(true),
+    first_pedal_enabled: robine.core.equipment_state.EquipmentSwitch = .init(false),
     first_pedal_mode: robine.core.equipment_state.EquipmentModeSwitch = .init(.middle),
-    tumnus_enabled: robine.core.equipment_state.EquipmentSwitch = .init(true),
-    big_muff_enabled: robine.core.equipment_state.EquipmentSwitch = .init(true),
-    king_orange_enabled: robine.core.equipment_state.EquipmentSwitch = .init(true),
-    king_red_enabled: robine.core.equipment_state.EquipmentSwitch = .init(true),
+    tumnus_enabled: robine.core.equipment_state.EquipmentSwitch = .init(false),
+    big_muff_enabled: robine.core.equipment_state.EquipmentSwitch = .init(false),
+    king_orange_enabled: robine.core.equipment_state.EquipmentSwitch = .init(false),
+    king_red_enabled: robine.core.equipment_state.EquipmentSwitch = .init(false),
     reverb_enabled: robine.core.equipment_state.EquipmentSwitch = .init(true),
     equipment_revision: u64 = 0,
 
@@ -232,7 +232,9 @@ const Studio = struct {
 };
 
 pub fn main() !void {
-    var studio = Studio{};
+    const studio = try std.heap.page_allocator.create(Studio);
+    defer std.heap.page_allocator.destroy(studio);
+    studio.* = .{};
     try studio.rebuildPedalboard();
     try studio.project();
 
@@ -267,7 +269,7 @@ pub fn main() !void {
         .equipment_camera = robine.ui.pedalboard_3d.rig_camera,
         .mode = .pedalboard_3d,
         .interaction = .{
-            .context = @ptrCast(&studio),
+            .context = @ptrCast(studio),
             .pointer_down = &Studio.pointerDown,
             .geometry = &Studio.geometry,
         },

@@ -13,8 +13,8 @@ their render coordinates.
 - macOS 13 or later, or Linux with X11/XWayland, OpenGL, and ALSA
 - Zig 0.16.x
 
-On Debian/Ubuntu, the Linux build headers are provided by `libx11-dev` and
-`libgl-dev`; ALSA is loaded at runtime through `libasound2`.
+On Debian/Ubuntu, the Linux build headers are provided by `libx11-dev`,
+`libgl-dev`, and `libpng-dev`; ALSA is loaded at runtime through `libasound2`.
 
 ## Run Robine Studio
 
