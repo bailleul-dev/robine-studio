@@ -297,8 +297,6 @@ pub fn amplifierCamera(id: AmplifierId) CameraPose {
     };
 }
 
-pub const amplifier_camera = amplifierCamera(.dumble);
-
 fn transformEquipment(mesh: *Mesh, vertex_start: usize, light_start: usize) void {
     for (mesh.vertices[vertex_start..mesh.len]) |*item| {
         const position = equipmentPoint(.{ item.position[0], item.position[1], item.position[2] });
@@ -405,12 +403,26 @@ fn pedalPlacement(rig: *const demo.Rig, pedal_index: usize) ?PedalPlacement {
 }
 
 pub fn amplifierAt(point: [2]f32, window_aspect: f32) ?AmplifierId {
+    return amplifierAtCamera(point, window_aspect, rig_camera);
+}
+
+/// Pick any amplifier visible from the current focused equipment camera. Side
+/// amplifiers remain real scene objects and can therefore be selected directly.
+pub fn amplifierAtFocusedView(
+    point: [2]f32,
+    window_aspect: f32,
+    focused: AmplifierId,
+) ?AmplifierId {
+    return amplifierAtCamera(point, window_aspect, amplifierCamera(focused));
+}
+
+fn amplifierAtCamera(point: [2]f32, window_aspect: f32, camera: CameraPose) ?AmplifierId {
     const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
     var result: ?AmplifierId = null;
     var nearest_distance_squared = std.math.inf(f32);
     for (amplifier_placements) |placement| {
-        if (!hitTestAmplifierPlacement(point, viewport_aspect, rig_camera, placement)) continue;
-        const projected = projectToWindow(equipmentPoint(placement.center), rig_camera, viewport_aspect) orelse continue;
+        if (!hitTestAmplifierPlacement(point, viewport_aspect, camera, placement)) continue;
+        const projected = projectToWindow(equipmentPoint(placement.center), camera, viewport_aspect) orelse continue;
         const dx = point[0] - projected[0];
         const dy = point[1] - projected[1];
         const distance_squared = dx * dx + dy * dy;
@@ -424,11 +436,6 @@ pub fn amplifierAt(point: [2]f32, window_aspect: f32) ?AmplifierId {
 
 pub fn hitTestAmplifier(point: [2]f32, window_aspect: f32) bool {
     return amplifierAt(point, window_aspect) != null;
-}
-
-pub fn hitTestFocusedAmplifier(point: [2]f32, window_aspect: f32, id: AmplifierId) bool {
-    const viewport_aspect = window_aspect * studio_viewport.width / studio_viewport.height;
-    return hitTestAmplifierPlacement(point, viewport_aspect, amplifierCamera(id), amplifierPlacement(id));
 }
 
 pub fn hitTestAmplifierPower(point: [2]f32, window_aspect: f32, id: AmplifierId) bool {
@@ -2012,9 +2019,26 @@ test "studio rug selects the generated base-color texture slot" {
     try std.testing.expectEqual(@as(usize, 36), textured_vertex_count);
 }
 
-test "focused combo remains clickable for direct return navigation" {
-    const projected_center = projectToWindow(equipmentPoint(combo_center), amplifier_camera, (1200.0 / 760.0) * studio_viewport.width / studio_viewport.height) orelse return error.ComboBehindCamera;
-    try std.testing.expect(hitTestFocusedAmplifier(projected_center, 1200.0 / 760.0, .dumble));
+fn focusedViewCanPick(current: AmplifierId, target: AmplifierId, window_aspect: f32) bool {
+    const samples: usize = 101;
+    for (0..samples) |row| {
+        for (0..samples) |column| {
+            const point = [2]f32{
+                -1.0 + 2.0 * @as(f32, @floatFromInt(column)) / @as(f32, @floatFromInt(samples - 1)),
+                -1.0 + 2.0 * @as(f32, @floatFromInt(row)) / @as(f32, @floatFromInt(samples - 1)),
+            };
+            if (amplifierAtFocusedView(point, window_aspect, current) == target) return true;
+        }
+    }
+    return false;
+}
+
+test "focused cameras directly pick every amplifier visible in their frame" {
+    const window_aspect = 1200.0 / 760.0;
+    try std.testing.expect(focusedViewCanPick(.dumble, .bogner, window_aspect));
+    try std.testing.expect(focusedViewCanPick(.dumble, .mesa, window_aspect));
+    try std.testing.expect(focusedViewCanPick(.bogner, .dumble, window_aspect));
+    try std.testing.expect(focusedViewCanPick(.mesa, .dumble, window_aspect));
 }
 
 test "each focused amplifier exposes its own power switch hit target" {

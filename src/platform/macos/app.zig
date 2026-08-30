@@ -74,6 +74,10 @@ const CameraTransition = struct {
     duration: f32,
 };
 
+// Equipment focus changes complete twice as fast as the original 2.8-second
+// motion while retaining the same quintic easing and interruption behavior.
+const equipment_camera_transition_seconds: f32 = 1.4;
+
 const RenderState = struct {
     device: Object,
     command_queue: Object,
@@ -1091,7 +1095,10 @@ fn replaceGeometry(state: *RenderState, geometry: Geometry) !void {
         .from = current_camera,
         .to = geometry.equipment_camera,
         .started_at = CACurrentMediaTime(),
-        .duration = if (cameraPoseEqual(current_camera, geometry.equipment_camera)) 0 else 2.8,
+        .duration = if (cameraPoseEqual(current_camera, geometry.equipment_camera))
+            0
+        else
+            equipment_camera_transition_seconds,
     };
     if (state.ray_tracing) |*ray_tracing| {
         if (new_acceleration_structure != null) {

@@ -92,9 +92,9 @@ const Studio = struct {
                     };
                     return true;
                 }
-                if (robine.ui.pedalboard_3d.hitTestFocusedAmplifier(point, window_aspect, focused)) {
-                    const next = focused.next();
-                    self.focused_amplifier = next;
+                if (robine.ui.pedalboard_3d.amplifierAtFocusedView(point, window_aspect, focused)) |selected| {
+                    if (selected == focused) return false;
+                    self.focused_amplifier = selected;
                     self.project() catch |err| {
                         self.focused_amplifier = focused;
                         std.log.err("Scene projection failed during amplifier navigation: {s}", .{@errorName(err)});

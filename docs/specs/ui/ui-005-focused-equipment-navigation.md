@@ -14,7 +14,7 @@ The generated scene exposes hit regions associated with typed semantic actions.
 For the first increment:
 
 - The active 3D amplifier exposes `show_amplifier` through a projected hit region.
-- Clicking the focused amplifier advances to the next amplifier camera.
+- Clicking any visible amplifier moves the focus directly to that amplifier.
 - Clicking empty space in a focused view returns to the rig camera.
 - Picking returns the action rather than a mesh index or platform view object.
 - `ViewState` owns the current `rig` or `amplifier` projection mode.
@@ -27,14 +27,14 @@ layout, or navigation rules.
 
 The first 3D amplifier focus presents:
 
-- The same amplifier mesh, approached by a 2.8-second quintic-eased camera move.
+- The same amplifier mesh, approached by a 1.4-second quintic-eased camera move.
 - A near-frontal pose placed between the pedal row and the amplifier, so the
   pedals pass behind the camera and cannot occlude the controls or grille.
 - Power, controls, input jack, handle, grille, badge, and assembly details derived
   from the amplifier description.
 - A distraction-free, full-width equipment viewport without a persistent
   catalog browser or signal-chain overview.
-- Circular Dumble → Mesa → Bogner → Dumble navigation by selecting the focused
+- Direct amplifier-to-amplifier navigation by selecting another visible
   amplifier body.
 - A direct route back to the rig view by selecting empty space around the amp.
 
@@ -60,7 +60,7 @@ reuse the same action and projection mechanism.
 - Clicking the visible combo amplifier starts a slow camera transition toward its
   front face.
 - The combo remains the same semantic instance and GPU geometry during the move.
-- Clicking the focused amplifier moves to the next amplifier with the existing
+- Clicking another visible amplifier moves directly to it with the existing
   eased camera transition.
 - Power remains a higher-priority hit target and activates the focused amplifier
   without advancing the camera.
