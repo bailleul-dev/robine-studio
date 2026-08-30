@@ -84,6 +84,10 @@ pub fn run(options: Options) !void {
     defer _ = c.XDestroyWindow(display, window);
 
     _ = c.XStoreName(display, window, options.title);
+    const net_wm_name = c.XInternAtom(display, "_NET_WM_NAME", c.False);
+    const utf8_string = c.XInternAtom(display, "UTF8_STRING", c.False);
+    const title = std.mem.span(options.title);
+    _ = c.XChangeProperty(display, window, net_wm_name, utf8_string, 8, c.PropModeReplace, title.ptr, @intCast(title.len));
     var delete_atom = c.XInternAtom(display, "WM_DELETE_WINDOW", c.False);
     _ = c.XSetWMProtocols(display, window, &delete_atom, 1);
     _ = c.XMapWindow(display, window);
@@ -93,6 +97,10 @@ pub fn run(options: Options) !void {
     defer c.glXDestroyContext(display, context);
     if (c.glXMakeCurrent(display, window, context) == 0) return error.OpenGLContextActivationFailed;
     defer _ = c.glXMakeCurrent(display, 0, null);
+
+    if (c.glGetString(c.GL_RENDERER)) |renderer| {
+        std.log.info("Linux OpenGL renderer: {s}", .{std.mem.span(renderer)});
+    }
 
     c.glClearColor(0.025, 0.038, 0.036, 1.0);
     c.glEnable(c.GL_DEPTH_TEST);
@@ -224,7 +232,14 @@ fn drawLitTriangles(vertices: []const lighting_lab.Vertex, light_position: [3]f3
     c.glLightfv(c.GL_LIGHT0, c.GL_POSITION, &position);
     c.glBegin(c.GL_TRIANGLES);
     for (vertices) |vertex| {
-        c.glColor4fv(&vertex.base_color);
+        const glow = 1.0 + @min(vertex.material[2], 4.0) * 0.35;
+        const color = [4]f32{
+            @min(vertex.base_color[0] * glow, 1.0),
+            @min(vertex.base_color[1] * glow, 1.0),
+            @min(vertex.base_color[2] * glow, 1.0),
+            vertex.base_color[3],
+        };
+        c.glColor4fv(&color);
         c.glNormal3fv(&vertex.normal);
         c.glVertex4fv(&vertex.position);
     }

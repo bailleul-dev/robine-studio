@@ -4,7 +4,7 @@ const std = @import("std");
 const Pcm = opaque {};
 const pcm_playback: c_int = 0;
 const pcm_access_rw_interleaved: c_int = 3;
-const pcm_format_float_le: c_int = 14;
+const pcm_format_float: c_int = if (@import("builtin").cpu.arch.endian() == .little) 14 else 15;
 
 const Alsa = struct {
     library: std.DynLib,
@@ -43,13 +43,13 @@ pub const NativeAudioDriver = struct {
     ) !void {
         var alsa = try Alsa.load();
         defer alsa.library.close();
-        _ = direction;
+        if (direction != .output) return;
         try visitor(visitor_context, .{
             .id = "default",
             .name = "ALSA default (PipeWire/PulseAudio compatible)",
-            .input_channels = 2,
+            .input_channels = 0,
             .output_channels = 2,
-            .is_default_input = true,
+            .is_default_input = false,
             .is_default_output = true,
         });
     }
@@ -67,6 +67,7 @@ pub const NativeAudioDriver = struct {
         const sample_rate: u32 = @intFromFloat(request.sample_rate orelse 48_000.0);
         const frames = request.preferred_frames orelse 512;
         const channels: u16 = @max(request.output_channels, 1);
+        if (channels > 64) return error.TooManyOutputChannels;
         var alsa = try Alsa.load();
         errdefer alsa.library.close();
         var pcm: *Pcm = undefined;
@@ -74,7 +75,7 @@ pub const NativeAudioDriver = struct {
         errdefer _ = alsa.pcm_close(pcm);
         if (alsa.pcm_set_params(
             pcm,
-            pcm_format_float_le,
+            pcm_format_float,
             pcm_access_rw_interleaved,
             channels,
             sample_rate,

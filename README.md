@@ -10,8 +10,11 @@ their render coordinates.
 
 ## Requirements
 
-- macOS 13 or later, or Linux with X11/XWayland and OpenGL
+- macOS 13 or later, or Linux with X11/XWayland, OpenGL, and ALSA
 - Zig 0.16.x
+
+On Debian/Ubuntu, the Linux build headers are provided by `libx11-dev` and
+`libgl-dev`; ALSA is loaded at runtime through `libasound2`.
 
 ## Run Robine Studio
 
@@ -25,7 +28,7 @@ On macOS the build creates `zig-out/Robine Studio.app`. On Linux it creates
 ## Verify
 
 ```sh
-zig build test
+zig build test -Doptimize=ReleaseSafe
 zig build
 ```
 
