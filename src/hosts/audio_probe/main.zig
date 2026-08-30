@@ -28,14 +28,14 @@ fn countAudio(context: *anyopaque, _: audio_contract.ProcessCycle) void {
 }
 
 pub fn main() !void {
-    var core_audio = native_audio.CoreAudioDriver{};
+    var native_driver = native_audio.NativeAudioDriver{};
     var visitor_context: u8 = 0;
-    const driver = core_audio.driver();
-    std.debug.print("Core Audio input devices\n", .{});
+    const driver = native_driver.driver();
+    std.debug.print("Native audio input devices\n", .{});
     try driver.enumerate(.input, &visitor_context, printDevice);
-    std.debug.print("\nCore Audio output devices\n", .{});
+    std.debug.print("\nNative audio output devices\n", .{});
     try driver.enumerate(.output, &visitor_context, printDevice);
-    std.debug.print("\nCore Audio duplex devices\n", .{});
+    std.debug.print("\nNative audio duplex devices\n", .{});
     try driver.enumerate(.duplex, &visitor_context, printDevice);
 
     var callback_counter = CallbackCounter{};

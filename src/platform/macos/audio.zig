@@ -328,6 +328,8 @@ pub const CoreAudioDriver = struct {
     };
 };
 
+pub const NativeAudioDriver = CoreAudioDriver;
+
 const CoreAudioSession = struct {
     device: ca.AudioDeviceID,
     direction: contract.Direction,

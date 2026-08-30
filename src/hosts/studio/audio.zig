@@ -33,7 +33,7 @@ const AmplifierTransition = robine.audio.mode_switch.DiscreteTransition(Amplifie
 
 pub const StartupPlayer = struct {
     allocator: std.mem.Allocator,
-    driver: native_audio.CoreAudioDriver = .{},
+    driver: native_audio.NativeAudioDriver = .{},
     source: robine.audio.wav.Audio,
     compressors: [3]robine.audio.nam.Model,
     tumnus: robine.audio.nam.Model,
@@ -242,7 +242,7 @@ pub const StartupPlayer = struct {
         errdefer opened.session.close();
         if (@abs(opened.config.sample_rate - self.sample_rate) > 0.5) {
             std.log.err(
-                "CoreAudio negotiated {d:.2} Hz but NAM requires {d:.2} Hz",
+                "Native audio negotiated {d:.2} Hz but NAM requires {d:.2} Hz",
                 .{ opened.config.sample_rate, self.sample_rate },
             );
             return error.OutputAndNamSampleRatesDiffer;

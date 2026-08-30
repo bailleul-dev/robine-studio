@@ -237,7 +237,8 @@ pub fn main() !void {
     try studio.project();
 
     var startup_player: studio_audio.StartupPlayer = undefined;
-    try startup_player.init(
+    var audio_started = false;
+    if (startup_player.init(
         std.heap.page_allocator,
         &studio.first_pedal_enabled,
         &studio.first_pedal_mode,
@@ -247,8 +248,12 @@ pub fn main() !void {
         &studio.king_red_enabled,
         &studio.reverb_enabled,
         &studio.active_amplifier,
-    );
-    defer startup_player.deinit();
+    )) {
+        audio_started = true;
+    } else |err| {
+        std.log.warn("Audio unavailable; continuing with the visual studio: {s}", .{@errorName(err)});
+    }
+    defer if (audio_started) startup_player.deinit();
 
     try platform.run(.{
         .title = "Robine Studio — descriptive equipment renderer",

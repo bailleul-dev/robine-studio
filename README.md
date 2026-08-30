@@ -3,13 +3,14 @@
 Robine Amp is a Zig project for semantically described musical equipment,
 interactive equipment rendering, and shared desktop, CLAP, and VST3 audio hosts.
 
-The first executable is a macOS Metal wireframe of a small rig. Pedals, controls,
-connections, amplifier, cabinet, speakers, and microphone are described by the
-model; the UI projection derives their render coordinates.
+The first executable is a native desktop renderer of a small rig (Metal on
+macOS, OpenGL/X11 on Linux). Pedals, controls, connections, amplifier, cabinet,
+speakers, and microphone are described by the model; the UI projection derives
+their render coordinates.
 
 ## Requirements
 
-- macOS 13 or later
+- macOS 13 or later, or Linux with X11/XWayland and OpenGL
 - Zig 0.16.x
 
 ## Run Robine Studio
@@ -18,7 +19,8 @@ model; the UI projection derives their render coordinates.
 zig build run-studio
 ```
 
-The build creates `zig-out/Robine Studio.app`.
+On macOS the build creates `zig-out/Robine Studio.app`. On Linux it creates
+`zig-out/bin/robine-studio`.
 
 ## Verify
 
@@ -27,7 +29,7 @@ zig build test
 zig build
 ```
 
-To enumerate Core Audio devices, negotiate the default output, and exercise its
+To enumerate native audio devices, negotiate the default output, and exercise its
 real-time callback silently:
 
 ```sh

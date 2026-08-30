@@ -10,7 +10,7 @@ release:
 	$(ZIG) build -Doptimize=$(OPTIMIZE)
 
 run-release: release
-	open -n "zig-out/Robine Studio.app"
+	$(ZIG) build run-studio -Doptimize=$(OPTIMIZE)
 
 test:
 	$(ZIG) build test -Doptimize=$(TEST_OPTIMIZE)
